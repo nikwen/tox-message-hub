@@ -26,6 +26,7 @@ private:
     void writeToLog(const std::string &text);
 
     void saveTox();
+    bool loadTox();
 };
 
 #endif // SERVER_H

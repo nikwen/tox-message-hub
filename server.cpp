@@ -23,18 +23,21 @@ Server::Server() {
         return;
     }
 
+    //Load tox status or set default identity information
+
+    if (!loadTox()) {
+        tox_set_name(tox, (uint8_t *) "Tox bot", 7);
+        tox_set_status_message(tox, (uint8_t *) "Replying to your messages", 25);
+    }
+
+    tox_set_user_status(tox, TOX_USERSTATUS_NONE);
+
     //Print tox id to the logs
 
     uint8_t friendAddress[TOX_FRIEND_ADDRESS_SIZE];
     tox_get_address(tox, friendAddress);
 
     writeToLog(byteToHex(friendAddress, TOX_FRIEND_ADDRESS_SIZE));
-
-    //Set identity information
-
-    tox_set_name(tox, (uint8_t *) "Tox bot", 7);
-    tox_set_status_message(tox, (uint8_t *) "Replying to your messages", 25);
-    tox_set_user_status(tox, TOX_USERSTATUS_NONE);
 
     //Bootstrap
 
@@ -104,7 +107,7 @@ void Server::callbackFriendMessageReceived(Tox *tox, int32_t friendnumber, const
  * Writes to log file on snappy systems, otherwise to cout
  */
 void Server::writeToLog(const string &text) {
-    ofstream logfile("/var/lib/apps/tox-redirection-server.nikwen/0.0.1/log.txt", std::ios_base::out | std::ios_base::app); //TODO: Version number via config.h.in
+    ofstream logfile("/var/lib/apps/tox-redirection-server.nikwen/0.0.1/log.txt", ios_base::out | ios_base::app); //TODO: Version number via config.h.in
 
     if (logfile) {
         logfile << text << std::endl;
@@ -114,11 +117,39 @@ void Server::writeToLog(const string &text) {
     }
 }
 
+bool Server::loadTox() {
+    ifstream loadFile("/var/lib/apps/tox-redirection-server.nikwen/0.0.1/profile.tox", ios_base::in | ios_base::binary);
+
+    if (!loadFile.is_open()) {
+        writeToLog("Failed to open tox id file for loading");
+        return false;
+    }
+
+    loadFile.seekg(0, ios::end);
+    size_t fileSize = loadFile.tellg();
+    loadFile.seekg(0, ios::beg);
+
+    uint8_t *data = new uint8_t[fileSize];
+    loadFile.read((char *) data, fileSize);
+    loadFile.close();
+
+    int loadResult = tox_load(tox, data, fileSize);
+
+    delete[] data;
+    if (loadResult == 0) {
+        writeToLog("Loaded tox status");
+        return true;
+    } else {
+        writeToLog("Failed to load tox status");
+        return false;
+    }
+}
+
 void Server::saveTox() {
-    ofstream saveFile("/var/lib/apps/tox-redirection-server.nikwen/0.0.1/profile.tox");
+    ofstream saveFile("/var/lib/apps/tox-redirection-server.nikwen/0.0.1/profile.tox", ios_base::out | ios_base::binary);
 
     if (!saveFile) {
-        writeToLog("Failed to open tox id file");
+        writeToLog("Failed to open tox id file for saving");
         return;
     }
 
