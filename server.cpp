@@ -106,7 +106,7 @@ void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message
             string name = body.substr(10, nameLength);
 
             uint8_t *uintNameArray = new uint8_t[nameLength];
-            memcpy(uintNameArray, message + 13, nameLength);
+            memcpy(uintNameArray, message + 13, nameLength); //TODO: Maxlength
 
             if (tox_set_name(tox, uintNameArray, nameLength) == 0) {
                 writeToLog("Changed name to " + name);
@@ -116,6 +116,22 @@ void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message
             }
 
             delete[] uintNameArray;
+            return;
+        } else if (body.find(" set_status ") == 0 && body.length() > 12) {
+            uint16_t statusLength = body.length() - 12;
+            string status = body.substr(12, statusLength);
+
+            uint8_t *uintStatusArray = new uint8_t[statusLength];
+            memcpy(uintStatusArray, message + 15, statusLength); //TODO: Maxlength
+
+            if (tox_set_status_message(tox, uintStatusArray, statusLength) == 0) {
+                writeToLog("Changed status to " + status);
+                saveTox();
+            } else {
+                writeToLog("Changing status to " + status + " failed");
+            }
+
+            delete[] uintStatusArray;
             return;
         }
     }
