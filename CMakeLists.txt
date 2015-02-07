@@ -29,9 +29,18 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/libs/${ARCH_DIR_NAME}/libsodium.so DES
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/libs/${ARCH_DIR_NAME}/libsodium.so.13 DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/snap/lib)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/libs/${ARCH_DIR_NAME}/libsodium.so.13.0.2 DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/snap/lib)
 
-#Install meta files
+# Install meta files
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/package.yaml DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/snap/meta)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/meta/readme.md DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/snap/meta)
 
-#Install run script
+# Install run script
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/run.sh DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/snap PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
+
+# Use C++11
+include(CheckCXXCompilerFlag)
+CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
+if(COMPILER_SUPPORTS_CXX11)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+else()
+    message(FATAL_ERROR "Please use a different compiler with C++11 support.")
+endif()

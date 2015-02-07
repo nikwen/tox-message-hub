@@ -38,10 +38,12 @@ Server::Server() {
 
     //Bootstrap
 
-    tox_bootstrap_from_address(tox, "192.254.75.102", 33445, new uint8_t[32] {
+    int bootstrapResult = tox_bootstrap_from_address(tox, "192.254.75.102", 33445, new uint8_t[32] {
                                    0x95, 0x1C, 0x88, 0xB7, 0xE7, 0x5C, 0x86, 0x74, 0x18, 0xAC, 0xDB, 0x5D, 0x27, 0x38, 0x21, 0x37,
                                    0x2B, 0xB5, 0xBD, 0x65, 0x27, 0x40, 0xBC, 0xDF, 0x62, 0x3A, 0x4F, 0xA2, 0x93, 0xE7, 0x5D, 0x2F
                                    });
+
+    writeToLog("Bootstrap: " + std::to_string(bootstrapResult));
 
     //Toxcore callbacks
 
@@ -50,8 +52,16 @@ Server::Server() {
 }
 
 void Server::startLoop() {
+    int connected = tox_isconnected(tox);
+    writeToLog("Connected: " + std::to_string(connected));
+
     while (1) {
         tox_do(tox);
+
+        if (connected != tox_isconnected(tox)) {
+            connected = tox_isconnected(tox);
+            writeToLog("Connected: " + std::to_string(connected));
+        }
 
         usleep(tox_do_interval(tox));
     }
@@ -71,6 +81,7 @@ string Server::byteToHex(uint8_t *data, uint16_t length) {
 
 //Automatically add everyone who adds the bot
 void Server::friendRequestReceived(const uint8_t *public_key) {
+    writeToLog("Received friend request");
     tox_add_friend_norequest(tox, public_key);
 }
 
@@ -91,11 +102,10 @@ void Server::callbackFriendMessageReceived(Tox *tox, int32_t friendnumber, const
  * Writes to log file on snappy systems, otherwise to cout
  */
 void Server::writeToLog(const string &text) {
-    ofstream logfile("/var/lib/apps/tox-redirection-server.nikwen/0.0.1/log.txt"); //TODO: Version number via config.h.in
+    ofstream logfile("/var/lib/apps/tox-redirection-server.nikwen/0.0.1/log.txt", std::ios_base::out | std::ios_base::app); //TODO: Version number via config.h.in
 
     if (logfile) {
         logfile << text << std::endl;
-        logfile.close();
     } else {
         cout << text << std::endl;
         return;
