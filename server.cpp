@@ -3,7 +3,7 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
-
+#include <string.h>
 #include <unistd.h>
 
 using namespace std;
@@ -88,6 +88,7 @@ string Server::byteToHex(uint8_t *data, uint16_t length) {
 void Server::friendRequestReceived(const uint8_t *public_key) {
     writeToLog("Received friend request");
     tox_add_friend_norequest(tox, public_key);
+    saveTox();
 }
 
 void Server::callbackFriendRequestReceived(Tox *tox, const uint8_t *public_key, const uint8_t *data, uint16_t length, void *userdata) {
@@ -96,6 +97,30 @@ void Server::callbackFriendRequestReceived(Tox *tox, const uint8_t *public_key, 
 
 //Simply reply to all messages by sending back the same one
 void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message, uint16_t length) {
+    string messageString((char*) message, length);
+
+    if (messageString.substr(0, 3) == string("###")) {
+        string body = messageString.substr(3, messageString.length() - 3);
+        if (body.find(" set_name ") == 0 && body.length() > 10) {
+            uint16_t nameLength = body.length() - 10;
+            string name = body.substr(10, nameLength);
+
+            uint8_t *uintNameArray = new uint8_t[nameLength];
+            memcpy(uintNameArray, message + 13, nameLength);
+
+            if (tox_set_name(tox, uintNameArray, nameLength) == 0) {
+                writeToLog("Changed name to " + name);
+                saveTox();
+            } else {
+                writeToLog("Changing name to " + name + " failed");
+            }
+
+            delete[] uintNameArray;
+            return;
+        }
+    }
+
+    writeToLog("Forwarding message");
     tox_send_message(tox, friendnumber, message, length);
 }
 
@@ -165,6 +190,4 @@ void Server::saveTox() {
     } else {
         writeToLog("Invalid fileSize for tox status");
     }
-
-    
 }
