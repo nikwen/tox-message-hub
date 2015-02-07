@@ -49,6 +49,8 @@ Server::Server() {
 
     tox_callback_friend_request(tox, callbackFriendRequestReceived, this);
     tox_callback_friend_message(tox, callbackFriendMessageReceived, this);
+
+    saveTox();
 }
 
 void Server::startLoop() {
@@ -110,4 +112,28 @@ void Server::writeToLog(const string &text) {
         cout << text << std::endl;
         return;
     }
+}
+
+void Server::saveTox() {
+    ofstream saveFile("/var/lib/apps/tox-redirection-server.nikwen/0.0.1/profile.tox");
+
+    if (!saveFile) {
+        writeToLog("Failed to open tox id file");
+        return;
+    }
+
+    uint32_t fileSize = tox_size(tox);
+    if (fileSize > 0 && fileSize <= INT32_MAX) {
+        uint8_t *data = new uint8_t[fileSize];
+        tox_save(tox, data);
+
+        saveFile.write((char *) data, fileSize);
+
+        delete[] data;
+        writeToLog("Saved tox status");
+    } else {
+        writeToLog("Invalid fileSize for tox status");
+    }
+
+    
 }
