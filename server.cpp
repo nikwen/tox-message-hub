@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <iomanip>
+#include <fstream>
 
 #include <unistd.h>
 
@@ -27,7 +28,7 @@ Server::Server() {
     uint8_t friendAddress[TOX_FRIEND_ADDRESS_SIZE];
     tox_get_address(tox, friendAddress);
 
-    cout << byteToHex(friendAddress, TOX_FRIEND_ADDRESS_SIZE) << endl;
+    writeToLog(byteToHex(friendAddress, TOX_FRIEND_ADDRESS_SIZE));
 
     //Set identity information
 
@@ -84,4 +85,19 @@ void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message
 
 void Server::callbackFriendMessageReceived(Tox *tox, int32_t friendnumber, const uint8_t * message, uint16_t length, void *userdata) {
     static_cast<Server *>(userdata)->friendMessageReceived(friendnumber, message, length);
+}
+
+/*
+ * Writes to log file on snappy systems, otherwise to cout
+ */
+void Server::writeToLog(const string &text) {
+    ofstream logfile("/var/lib/apps/tox-redirection-server.nikwen/0.0.1/log.txt"); //TODO: Version number via config.h.in
+
+    if (logfile) {
+        logfile << text << std::endl;
+        logfile.close();
+    } else {
+        cout << text << std::endl;
+        return;
+    }
 }

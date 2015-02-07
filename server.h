@@ -22,6 +22,8 @@ private:
 
     static void callbackFriendRequestReceived(Tox *tox, const uint8_t *public_key, const uint8_t *data, uint16_t length, void *userdata);
     static void callbackFriendMessageReceived(Tox *tox, int32_t friendnumber, const uint8_t * message, uint16_t length, void *userdata);
+
+    void writeToLog(const std::string &text);
 };
 
 #endif // SERVER_H
