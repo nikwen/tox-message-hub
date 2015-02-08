@@ -102,13 +102,13 @@ void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message
     if (messageString.substr(0, 3) == string("###")) {
         string body = messageString.substr(3, messageString.length() - 3);
         if (body.find(" set_name ") == 0 && body.length() > 10) {
-            uint16_t nameLength = body.length() - 10;
-            string name = body.substr(10, nameLength);
+            uint16_t uintNameArrayLength = min((int) (body.length() - 10), TOX_MAX_NAME_LENGTH);
+            uint8_t *uintNameArray = new uint8_t[uintNameArrayLength];
+            memcpy(uintNameArray, message + 13, uintNameArrayLength);
 
-            uint8_t *uintNameArray = new uint8_t[nameLength];
-            memcpy(uintNameArray, message + 13, nameLength); //TODO: Maxlength
+            string name = body.substr(10, uintNameArrayLength);
 
-            if (tox_set_name(tox, uintNameArray, nameLength) == 0) {
+            if (tox_set_name(tox, uintNameArray, uintNameArrayLength) == 0) {
                 writeToLog("Changed name to " + name);
                 saveTox();
             } else {
@@ -118,13 +118,13 @@ void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message
             delete[] uintNameArray;
             return;
         } else if (body.find(" set_status ") == 0 && body.length() > 12) {
-            uint16_t statusLength = body.length() - 12;
-            string status = body.substr(12, statusLength);
+            uint16_t uintStatusArrayLength = min((int) (body.length() - 12), TOX_MAX_STATUSMESSAGE_LENGTH);
+            uint8_t *uintStatusArray = new uint8_t[uintStatusArrayLength];
+            memcpy(uintStatusArray, message + 15, uintStatusArrayLength);
 
-            uint8_t *uintStatusArray = new uint8_t[statusLength];
-            memcpy(uintStatusArray, message + 15, statusLength); //TODO: Maxlength
+            string status = body.substr(12, uintStatusArrayLength);
 
-            if (tox_set_status_message(tox, uintStatusArray, statusLength) == 0) {
+            if (tox_set_status_message(tox, uintStatusArray, uintStatusArrayLength) == 0) {
                 writeToLog("Changed status to " + status);
                 saveTox();
             } else {
