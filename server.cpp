@@ -46,7 +46,7 @@ Server::Server() {
                                    0x2B, 0xB5, 0xBD, 0x65, 0x27, 0x40, 0xBC, 0xDF, 0x62, 0x3A, 0x4F, 0xA2, 0x93, 0xE7, 0x5D, 0x2F
                                    });
 
-    writeToLog("Bootstrap: " + std::to_string(bootstrapResult));
+    writeToLog("Bootstrap: " + to_string(bootstrapResult));
 
     //Toxcore callbacks
 
@@ -65,14 +65,14 @@ void Server::startLoop() {
 
         if (connected != tox_isconnected(tox)) {
             connected = tox_isconnected(tox);
-            writeToLog("Connected: " + std::to_string(connected));
+            writeToLog("Connected: " + to_string(connected));
         }
 
         usleep(tox_do_interval(tox));
     }
 }
 
-string Server::byteToHex(uint8_t *data, uint16_t length) {
+string Server::byteToHex(const uint8_t *data, uint16_t length) {
     char hexString[length * 2];
     static const char hexChars[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
@@ -86,9 +86,15 @@ string Server::byteToHex(uint8_t *data, uint16_t length) {
 
 //Automatically add everyone who adds the bot
 void Server::friendRequestReceived(const uint8_t *public_key) {
-    writeToLog("Received friend request");
+    //Add friend back
     tox_add_friend_norequest(tox, public_key);
     saveTox();
+
+    //Set friend as redirection target if it is the first one
+    if (tox_count_friendlist(tox) == 1) {
+        redirectionPubKey = byteToHex(public_key, TOX_PUBLIC_KEY_SIZE);
+        writeToLog(redirectionPubKey);
+    }
 }
 
 void Server::callbackFriendRequestReceived(Tox *tox, const uint8_t *public_key, const uint8_t *data, uint16_t length, void *userdata) {
@@ -159,7 +165,7 @@ void Server::writeToLog(const string &text) {
 }
 
 bool Server::loadTox() {
-    ifstream loadFile("/var/lib/apps/tox-redirection-server.nikwen/0.0.1/profile.tox", ios_base::in | ios_base::binary);
+    ifstream loadFile("/var/lib/apps/tox-redirection-server.nikwen/0.0.1/profile.tox", ios_base::in | ios_base::binary); //TODO: Add number for starting multiple servers
 
     if (!loadFile.is_open()) {
         writeToLog("Failed to open tox id file for loading");
