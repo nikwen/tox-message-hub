@@ -14,7 +14,7 @@ public:
 
 private:
     Tox *tox;
-    std::string redirectionPubKey;
+//    std::string redirectionPubKey; //TODO: Why does network connectivity stop working when we uncomment this?
 
     std::string byteToHex(const uint8_t *data, uint16_t length);
 

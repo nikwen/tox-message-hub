@@ -19,7 +19,7 @@ Server::Server() {
     tox = tox_new(&toxOptions);
 
     if (tox == NULL) {
-        cerr << "toxcore failed to start" << endl;
+        writeToLog("toxcore failed to start");
         return;
     }
 
@@ -91,9 +91,9 @@ void Server::friendRequestReceived(const uint8_t *public_key) {
     saveTox();
 
     //Set friend as redirection target if it is the first one
-    if (tox_count_friendlist(tox) == 1) {
-        redirectionPubKey = byteToHex(public_key, TOX_PUBLIC_KEY_SIZE);
-        writeToLog(redirectionPubKey);
+    if (tox_count_friendlist(tox) == 1) { //TODO: Uncomment
+//        redirectionPubKey = byteToHex(public_key, TOX_PUBLIC_KEY_SIZE);
+//        writeToLog(redirectionPubKey);
     }
 }
 
