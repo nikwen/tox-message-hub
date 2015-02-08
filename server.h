@@ -13,8 +13,9 @@ public:
     void startLoop();
 
 private:
-    Tox *tox;
-//    std::string redirectionPubKey; //TODO: Why does network connectivity stop working when we uncomment this?
+    Tox *tox = nullptr;
+    std::string redirectionPubKey;
+    int32_t redirectionFriendNumber = -1;
 
     std::string byteToHex(const uint8_t *data, uint16_t length);
 

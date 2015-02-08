@@ -87,13 +87,22 @@ string Server::byteToHex(const uint8_t *data, uint16_t length) {
 //Automatically add everyone who adds the bot
 void Server::friendRequestReceived(const uint8_t *public_key) {
     //Add friend back
-    tox_add_friend_norequest(tox, public_key);
+    int32_t friendNumber = tox_add_friend_norequest(tox, public_key);
+    if (friendNumber == -1) {
+        writeToLog("Failed to add friend");
+        return;
+    }
+
+    string publicKey = byteToHex(public_key, TOX_PUBLIC_KEY_SIZE);
+    writeToLog(string("Added friend ") + publicKey + " (friend number: " + to_string(friendNumber) + ")");
+
     saveTox();
 
     //Set friend as redirection target if it is the first one
-    if (tox_count_friendlist(tox) == 1) { //TODO: Uncomment
-//        redirectionPubKey = byteToHex(public_key, TOX_PUBLIC_KEY_SIZE);
-//        writeToLog(redirectionPubKey);
+    if (tox_count_friendlist(tox) == 1) { //TODO: Save in and load from file
+        redirectionPubKey = publicKey;
+        redirectionFriendNumber = friendNumber;
+        writeToLog("Redirecting to: " + redirectionPubKey + ", friend number: " + to_string(redirectionFriendNumber));
     }
 }
 
@@ -105,7 +114,8 @@ void Server::callbackFriendRequestReceived(Tox *tox, const uint8_t *public_key, 
 void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message, uint16_t length) {
     string messageString((char*) message, length);
 
-    if (messageString.substr(0, 3) == string("###")) {
+    //Only accept commands from redirection target
+    if (friendnumber == redirectionFriendNumber && messageString.substr(0, 3) == string("###")) {
         string body = messageString.substr(3, messageString.length() - 3);
         if (body.find(" set_name ") == 0 && body.length() > 10) {
             uint16_t uintNameArrayLength = min((int) (body.length() - 10), TOX_MAX_NAME_LENGTH);
@@ -142,8 +152,12 @@ void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message
         }
     }
 
-    writeToLog("Forwarding message");
-    tox_send_message(tox, friendnumber, message, length);
+    int result = tox_send_message(tox, redirectionFriendNumber, message, length);
+    if (result == 0) {
+        writeToLog("Failed to forward message");
+    } else {
+        writeToLog("Forwarded message");
+    }
 }
 
 void Server::callbackFriendMessageReceived(Tox *tox, int32_t friendnumber, const uint8_t * message, uint16_t length, void *userdata) {

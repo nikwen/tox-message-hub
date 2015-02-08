@@ -2,8 +2,8 @@
 
 int main()
 {
-    Server s;
-    s.startLoop();
+    Server *s = new Server();
+    s->startLoop();
 
     return 0;
 }
