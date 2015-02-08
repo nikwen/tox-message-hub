@@ -111,8 +111,8 @@ void Server::callbackFriendRequestReceived(Tox *tox, const uint8_t *public_key, 
 }
 
 //Simply reply to all messages by sending back the same one
-void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message, uint16_t length) {
-    string messageString((char*) message, length);
+void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message, uint16_t messageLength) {
+    string messageString((char*) message, messageLength);
 
     //Only accept commands from redirection target
     if (friendnumber == redirectionFriendNumber && messageString.substr(0, 3) == string("###")) {
@@ -152,7 +152,25 @@ void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message
         }
     }
 
-    int result = tox_send_message(tox, redirectionFriendNumber, message, length);
+    uint8_t *name = new uint8_t[TOX_MAX_NAME_LENGTH];
+    int nameLength = tox_get_name(tox, friendnumber, name);
+    int sendMessageLength = nameLength + messageLength + 2;
+    int result;
+    if (nameLength != -1 && sendMessageLength < TOX_MAX_MESSAGE_LENGTH) {
+        uint8_t *sendMessage = new uint8_t[sendMessageLength];
+        string divider = ": ";
+        memcpy(sendMessage, name, nameLength);
+        memcpy(sendMessage + nameLength, divider.c_str(), 2);
+        memcpy(sendMessage + nameLength + 2, message, messageLength);
+
+        result = tox_send_message(tox, redirectionFriendNumber, sendMessage, sendMessageLength);
+
+        delete[] sendMessage;
+    } else {
+        result = tox_send_message(tox, redirectionFriendNumber, message, messageLength);
+    }
+    delete[] name;
+
     if (result == 0) {
         writeToLog("Failed to forward message");
     } else {
