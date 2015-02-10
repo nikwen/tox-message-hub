@@ -1,10 +1,10 @@
 name: @PROJECT_NAME@.nikwen
 architecture: amd64
 version: 0.0.1
-source: https://github.com/nikwen/tox-redirection-server
+source: https://github.com/nikwen/@PROJECT_NAME@
 vendor: Niklas Wenzel <nikwen.developer@gmail.com>
 icon:
 services:
  - name: @PROJECT_NAME@
-   description: "Tox redirection server"
+   description: "Tox Hub"
    start: ./run.sh

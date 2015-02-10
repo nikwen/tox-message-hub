@@ -1,1 +1,1 @@
-Tox redirection server
+Tox Hub
