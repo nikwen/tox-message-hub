@@ -1,1 +1,1 @@
-Tox Hub
+Tox Message Hub

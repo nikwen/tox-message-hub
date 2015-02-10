@@ -186,7 +186,7 @@ void Server::callbackFriendMessageReceived(Tox *tox, int32_t friendnumber, const
  * Writes to log file on snappy systems, otherwise to cout
  */
 void Server::writeToLog(const string &text) {
-    ofstream logfile("/var/lib/apps/tox-hub.nikwen/0.0.1/log.txt", ios_base::out | ios_base::app); //TODO: Version number via config.h.in
+    ofstream logfile("/var/lib/apps/tox-message-hub.nikwen/0.0.1/log.txt", ios_base::out | ios_base::app); //TODO: Version number via config.h.in
 
     if (logfile) {
         logfile << text << std::endl;
@@ -197,7 +197,7 @@ void Server::writeToLog(const string &text) {
 }
 
 bool Server::loadTox() {
-    ifstream loadFile("/var/lib/apps/tox-hub.nikwen/0.0.1/profile.tox", ios_base::in | ios_base::binary); //TODO: Add number for starting multiple servers
+    ifstream loadFile("/var/lib/apps/tox-message-hub.nikwen/0.0.1/profile.tox", ios_base::in | ios_base::binary); //TODO: Add number for starting multiple servers
 
     if (!loadFile.is_open()) {
         writeToLog("Failed to open tox id file for loading");
@@ -225,7 +225,7 @@ bool Server::loadTox() {
 }
 
 void Server::saveTox() {
-    ofstream saveFile("/var/lib/apps/tox-hub.nikwen/0.0.1/profile.tox", ios_base::out | ios_base::binary);
+    ofstream saveFile("/var/lib/apps/tox-message-hub.nikwen/0.0.1/profile.tox", ios_base::out | ios_base::binary);
 
     if (!saveFile) {
         writeToLog("Failed to open tox id file for saving");

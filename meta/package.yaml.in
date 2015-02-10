@@ -6,5 +6,5 @@ vendor: Niklas Wenzel <nikwen.developer@gmail.com>
 icon:
 services:
  - name: @PROJECT_NAME@
-   description: "Tox Hub"
+   description: "Tox Message Hub"
    start: ./run.sh
