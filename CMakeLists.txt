@@ -9,9 +9,17 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include/
 )
 
-set(ARCH_DIR_NAME amd64)
+set(ARCH amd64)
+set(ARCH_DIR_NAME ${ARCH})
+set(DATA_DIR_PREFIX "/var/lib/apps/${PROJECT_NAME}.nikwen")
+set(VERSION_NUMBER "0.0.1")
+set(DATA_DIR "${DATA_DIR_PREFIX}/${VERSION_NUMBER}/")
 
 target_link_libraries(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/libs/${ARCH_DIR_NAME}/libtoxcore.so)
+
+# Configure and include config.h.in
+configure_file(config.h.in ${CMAKE_BINARY_DIR}/config.h)
+include_directories(${CMAKE_BINARY_DIR})
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/meta/package.yaml.in ${CMAKE_CURRENT_BINARY_DIR}/package.yaml)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/meta/run.sh.in ${CMAKE_CURRENT_BINARY_DIR}/run.sh)

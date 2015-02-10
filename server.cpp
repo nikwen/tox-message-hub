@@ -6,7 +6,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "config.h"
+
 using namespace std;
+
+//TODO: Big issue after installing!!! The app is only able to run properly after installing a new version with some changes made to it.
 
 Server::Server() {
     //Create tox object
@@ -186,7 +190,7 @@ void Server::callbackFriendMessageReceived(Tox *tox, int32_t friendnumber, const
  * Writes to log file on snappy systems, otherwise to cout
  */
 void Server::writeToLog(const string &text) {
-    ofstream logfile("/var/lib/apps/tox-message-hub.nikwen/0.0.1/log.txt", ios_base::out | ios_base::app); //TODO: Version number via config.h.in
+    ofstream logfile(string(DATA_DIR) + "log_000.txt", ios_base::out | ios_base::app); //TODO: Issue with saving files directly after installation?
 
     if (logfile) {
         logfile << text << std::endl;
@@ -197,7 +201,7 @@ void Server::writeToLog(const string &text) {
 }
 
 bool Server::loadTox() {
-    ifstream loadFile("/var/lib/apps/tox-message-hub.nikwen/0.0.1/profile.tox", ios_base::in | ios_base::binary); //TODO: Add number for starting multiple servers
+    ifstream loadFile(string(DATA_DIR) + "profile_000.tox", ios_base::in | ios_base::binary);
 
     if (!loadFile.is_open()) {
         writeToLog("Failed to open tox id file for loading");
@@ -225,7 +229,7 @@ bool Server::loadTox() {
 }
 
 void Server::saveTox() {
-    ofstream saveFile("/var/lib/apps/tox-message-hub.nikwen/0.0.1/profile.tox", ios_base::out | ios_base::binary);
+    ofstream saveFile(string(DATA_DIR) + "profile_000.tox", ios_base::out | ios_base::binary);
 
     if (!saveFile) {
         writeToLog("Failed to open tox id file for saving");

@@ -1,6 +1,6 @@
 name: @PROJECT_NAME@.nikwen
-architecture: amd64
-version: 0.0.1
+architecture: @ARCH@
+version: @VERSION_NUMBER@
 source: https://github.com/nikwen/@PROJECT_NAME@
 vendor: Niklas Wenzel <nikwen.developer@gmail.com>
 icon:
