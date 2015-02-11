@@ -10,8 +10,6 @@
 
 using namespace std;
 
-//TODO: Big issue after installing!!! The app is only able to run properly after installing a new version with some changes made to it.
-
 Server::Server() {
     //Create tox object
 
@@ -190,7 +188,7 @@ void Server::callbackFriendMessageReceived(Tox *tox, int32_t friendnumber, const
  * Writes to log file on snappy systems, otherwise to cout
  */
 void Server::writeToLog(const string &text) {
-    ofstream logfile(string(DATA_DIR) + "log_000.txt", ios_base::out | ios_base::app); //TODO: Issue with saving files directly after installation?
+    ofstream logfile(string(DATA_DIR) + "log_000.txt", ios_base::out | ios_base::app);
 
     if (logfile) {
         logfile << text << std::endl;
