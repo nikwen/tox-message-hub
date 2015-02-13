@@ -32,6 +32,8 @@ Server::Server() {
         tox_set_status_message(tox, (uint8_t *) "Replying to your messages", 25);
     }
 
+    loadConfig();
+
     tox_set_user_status(tox, TOX_USERSTATUS_NONE);
 
     //Print tox id to the logs
@@ -86,6 +88,31 @@ string Server::byteToHex(const uint8_t *data, uint16_t length) {
     return string(hexString, length * 2);
 }
 
+//Returns true if successful, false if hexString is too short
+bool Server::hexToByte(const string hexString, uint8_t* data, uint16_t length) {
+    if (hexString.length() / 2 < length) {
+        return false;
+    }
+
+    for (int i = 0; i < length; i++) {
+        data[i] = hexCharToInt(hexString.at(2 * i)) * 16 + hexCharToInt(hexString.at(2 * i + 1));
+    }
+
+    return true;
+}
+
+int Server::hexCharToInt(char input) {
+    if (input >= '0' && input <= '9') {
+        return input - '0';
+    } else if (input >= 'A' && input <= 'F') {
+        return input - 'A' + 10;
+    } else if (input >= 'a' && input <= 'f') {
+        return input - 'a' + 10;
+    } else {
+        return -1;
+    }
+}
+
 //Automatically add everyone who adds the bot
 void Server::friendRequestReceived(const uint8_t *public_key) {
     //Add friend back
@@ -105,6 +132,7 @@ void Server::friendRequestReceived(const uint8_t *public_key) {
         redirectionPubKey = publicKey;
         redirectionFriendNumber = friendNumber;
         writeToLog("Redirecting to: " + redirectionPubKey + ", friend number: " + to_string(redirectionFriendNumber));
+        saveConfig();
     }
 }
 
@@ -196,12 +224,72 @@ void Server::writeToLog(const string &text) {
         cout << text << std::endl;
         return;
     }
+
+    logfile.close();
+}
+
+#define CONFIG_REDIRECTION_PUB_KEY "redirectionPubKey="
+
+void Server::loadConfig() {
+    ifstream loadFile(string(DATA_DIR) + "profile_000.conf");
+
+    if (!loadFile) {
+        writeToLog("Failed to open config file for loading");
+        return;
+    }
+
+    string line;
+
+    while (getline(loadFile, line)) {
+        int pos;
+        if ((pos = line.find(CONFIG_REDIRECTION_PUB_KEY)) == 0) {
+            string pubKey = line.substr(18); //CONF_REDIRECTION_PUB_KEY.length()
+            if (pubKey.length() == TOX_PUBLIC_KEY_SIZE * 2) {
+                uint8_t *pubKeyArray = new uint8_t[TOX_PUBLIC_KEY_SIZE];
+
+                hexToByte(pubKey, pubKeyArray, TOX_PUBLIC_KEY_SIZE);
+
+                int friendNumber = tox_get_friend_number(tox, pubKeyArray);
+                if (friendNumber != -1) { //TODO: What if added before program started?
+                    redirectionPubKey = pubKey;
+                    redirectionFriendNumber = friendNumber;
+                    writeToLog("redirectionPubKey: " + redirectionPubKey);
+                    writeToLog("redirectionFriendNumber: " + to_string(redirectionFriendNumber));
+                } else {
+                    writeToLog("Given redirectionPubKey does not belong to a friend");
+                }
+
+                delete[] pubKeyArray;
+            } else {
+                writeToLog("Given redirectionPubKey has wrong length: " + to_string(pubKey.length()));
+            }
+        } else {
+            writeToLog("Could not interpret line");
+        }
+    }
+
+    loadFile.close();
+}
+
+void Server::saveConfig() {
+    ofstream saveFile(string(DATA_DIR) + "profile_000.conf");
+
+    if (!saveFile) {
+        writeToLog("Failed to open config file for saving");
+        return;
+    }
+
+    if (!redirectionPubKey.empty()) {
+        saveFile << CONFIG_REDIRECTION_PUB_KEY << redirectionPubKey << endl;
+    }
+
+    saveFile.close();
 }
 
 bool Server::loadTox() {
     ifstream loadFile(string(DATA_DIR) + "profile_000.tox", ios_base::in | ios_base::binary);
 
-    if (!loadFile.is_open()) {
+    if (!loadFile) {
         writeToLog("Failed to open tox id file for loading");
         return false;
     }
@@ -217,6 +305,8 @@ bool Server::loadTox() {
     int loadResult = tox_load(tox, data, fileSize);
 
     delete[] data;
+    loadFile.close();
+
     if (loadResult == 0) {
         writeToLog("Loaded tox status");
         return true;
@@ -246,4 +336,6 @@ void Server::saveTox() {
     } else {
         writeToLog("Invalid fileSize for tox status");
     }
+
+    saveFile.close();
 }

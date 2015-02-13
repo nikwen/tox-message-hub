@@ -8,7 +8,7 @@ int main()
     //have write access to the required directories on Snappy Ubuntu Core
     //when the service is started directly after installing the package
     //for the first time.
-    usleep(1000000);
+    usleep(10000000); //TODO: Remove the ugly workaround and search for the real reason...
 
     //Start server
     Server *s = new Server();
