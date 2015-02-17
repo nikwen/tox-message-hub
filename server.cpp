@@ -146,7 +146,7 @@ void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message
 
     //Only accept commands from redirection target
     if (friendnumber == redirectionFriendNumber && messageString.substr(0, 3) == string("###")) {
-        string body = messageString.substr(3, messageString.length() - 3);
+        string body = messageString.substr(3);
         if (body.find(" set_name ") == 0 && body.length() > 10) {
             uint16_t uintNameArrayLength = min((int) (body.length() - 10), TOX_MAX_NAME_LENGTH);
             uint8_t *uintNameArray = new uint8_t[uintNameArrayLength];
@@ -179,6 +179,41 @@ void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message
 
             delete[] uintStatusArray;
             return;
+        } else if (body.find(" message ") == 0 && body.length() > 9) {
+            string text = body.substr(9);
+            int noNumberPos = text.find_first_not_of("0123456789");
+            int spacePos = text.find(" ");
+            if (spacePos > 0 && noNumberPos == spacePos) {
+                uint32_t friendId = atoi(text.substr(0, noNumberPos).c_str());
+                if (tox_friend_exists(tox, friendId)) {
+                    int sendMessageLength = text.length() - noNumberPos - 1;
+                    if (sendMessageLength > 0) {
+                        uint16_t uintSendMessageArrayLength = min(sendMessageLength, TOX_MAX_MESSAGE_LENGTH);
+                        uint8_t *uintSendMessageArray = new uint8_t[uintSendMessageArrayLength];
+                        memcpy(uintSendMessageArray, message + noNumberPos + 13, uintSendMessageArrayLength);
+
+                        string sendMessage = body.substr(noNumberPos + 13, uintSendMessageArrayLength);
+
+                        if (tox_send_message(tox, friendId, uintSendMessageArray, uintSendMessageArrayLength) == 0) {
+                            writeToLog("Changed status to " + sendMessage);
+                            saveTox();
+                        } else {
+                            writeToLog("Changing status to " + sendMessage + " failed");
+                        }
+
+                        delete[] uintSendMessageArray;
+                        return;
+                    } else {
+                        writeToLog("No message entered");
+                    }
+                } else {
+                    writeToLog("Given friend ID does not exist");
+                }
+            } else {
+                writeToLog("No friend ID entered");
+            }
+        } else {
+            writeToLog("Could not interpret command");
         }
     }
 
