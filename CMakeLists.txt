@@ -13,7 +13,7 @@ set(ARCH amd64)
 set(ARCH_DIR_NAME ${ARCH})
 set(DATA_DIR_PREFIX "/var/lib/apps/${PROJECT_NAME}.nikwen")
 set(VERSION_NUMBER "0.0.1")
-set(DATA_DIR "${DATA_DIR_PREFIX}/${VERSION_NUMBER}/")
+set(DATA_DIR "~/.local/share/tox-message-hub/") #TODO: Create dir #TODO: Switch for snappy (old one: set(DATA_DIR "${DATA_DIR_PREFIX}/${VERSION_NUMBER}/"))
 
 target_link_libraries(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/libs/${ARCH_DIR_NAME}/libtoxcore.so)
 

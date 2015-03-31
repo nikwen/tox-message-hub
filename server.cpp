@@ -5,6 +5,8 @@
 #include <fstream>
 #include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <pwd.h>
 
 #include "config.h"
 
@@ -13,47 +15,81 @@ using namespace std;
 Server::Server() {
     //Create tox object
 
-    Tox_Options toxOptions;
-    toxOptions.proxy_type = TOX_PROXY_NONE;
-    toxOptions.proxy_address[0] = 0;
-    toxOptions.proxy_port = 0;
+    Tox_Options *toxOptions = tox_options_new(NULL);
 
-    tox = tox_new(&toxOptions);
-
-    if (tox == NULL) {
-        writeToLog("toxcore failed to start");
+    if (toxOptions == NULL) {
+        writeToLog("Failed to create new ToxOptions instance");
         return;
     }
 
-    //Load tox status or set default identity information
+    //Try to load tox object from file
 
-    if (!loadTox()) {
-        tox_set_name(tox, (uint8_t *) "Tox bot", 7);
-        tox_set_status_message(tox, (uint8_t *) "Replying to your messages", 25);
+    size_t loadFileSize = loadToxFileSize();
+
+    if (loadFileSize != -1) {
+        uint8_t * data = new uint8_t[loadFileSize];
+
+        if (loadTox(data, loadFileSize)) {
+            TOX_ERR_NEW *loadingError = new TOX_ERR_NEW;
+
+            tox = tox_new(toxOptions, data, loadFileSize, loadingError);
+
+            if (*loadingError != TOX_ERR_NEW_OK) {
+                writeToLog("Saved tox id exists but loading failed");
+                writeToLog("Aborting");
+                return;
+            }
+
+            delete loadingError;
+        } else {
+            writeToLog("Loading saved tox id failed");
+            writeToLog("Aborting");
+            return;
+        }
+
+        delete [] data;
+    } else {
+        TOX_ERR_NEW *loadingError = new TOX_ERR_NEW;
+
+        tox = tox_new(toxOptions, NULL, 0, NULL);
+
+        if (*loadingError != TOX_ERR_NEW_OK) {
+            writeToLog("Failed to create new tox instance");
+            writeToLog("Aborting");
+            return;
+        }
+
+        //Set default name and status
+
+        tox_self_set_name(tox, (uint8_t *) "Tox bot", 7, NULL);
+        tox_self_set_status_message(tox, (uint8_t *) "Replying to your messages", 25, NULL);
+
+        delete loadingError;
     }
 
     loadConfig();
 
-    tox_set_user_status(tox, TOX_USERSTATUS_NONE);
+    tox_self_set_status(tox, TOX_USER_STATUS_NONE);
 
     //Print tox id to the logs
 
-    uint8_t friendAddress[TOX_FRIEND_ADDRESS_SIZE];
-    tox_get_address(tox, friendAddress);
+    uint8_t selfAddress[TOX_ADDRESS_SIZE];
+    tox_self_get_address(tox, selfAddress);
 
-    writeToLog(byteToHex(friendAddress, TOX_FRIEND_ADDRESS_SIZE));
+    writeToLog(byteToHex(selfAddress, TOX_ADDRESS_SIZE));
 
     //Bootstrap
 
-    int bootstrapResult = tox_bootstrap_from_address(tox, "192.254.75.102", 33445, new uint8_t[32] {
+    int bootstrapResult = tox_bootstrap(tox, "192.254.75.102", 33445, new uint8_t[32] {
                                    0x95, 0x1C, 0x88, 0xB7, 0xE7, 0x5C, 0x86, 0x74, 0x18, 0xAC, 0xDB, 0x5D, 0x27, 0x38, 0x21, 0x37,
                                    0x2B, 0xB5, 0xBD, 0x65, 0x27, 0x40, 0xBC, 0xDF, 0x62, 0x3A, 0x4F, 0xA2, 0x93, 0xE7, 0x5D, 0x2F
-                                   });
+                                   }, NULL);
 
     writeToLog("Bootstrap: " + to_string(bootstrapResult));
 
     //Toxcore callbacks
 
+    tox_callback_self_connection_status(tox, callbackSelfConnectionStatus, this);
     tox_callback_friend_request(tox, callbackFriendRequestReceived, this);
     tox_callback_friend_message(tox, callbackFriendMessageReceived, this);
 
@@ -61,18 +97,9 @@ Server::Server() {
 }
 
 void Server::startLoop() {
-    int connected = tox_isconnected(tox);
-    writeToLog("Connected: " + std::to_string(connected));
-
     while (1) {
-        tox_do(tox);
-
-        if (connected != tox_isconnected(tox)) {
-            connected = tox_isconnected(tox);
-            writeToLog("Connected: " + to_string(connected));
-        }
-
-        usleep(tox_do_interval(tox));
+        tox_iterate(tox);
+        usleep(tox_iteration_interval(tox) * 1000);
     }
 }
 
@@ -113,39 +140,48 @@ int Server::hexCharToInt(char input) {
     }
 }
 
+void Server::selfConnectionStatusChanged(TOX_CONNECTION connectionStatus) {
+    connected = (connectionStatus != TOX_CONNECTION_NONE);
+    writeToLog("Connected: " + to_string(connected));
+}
+
+void Server::callbackSelfConnectionStatus(Tox *tox, TOX_CONNECTION connectionStatus, void *user_data) {
+    static_cast<Server *>(user_data)->selfConnectionStatusChanged(connectionStatus);
+}
+
 //Automatically add everyone who adds the bot
-void Server::friendRequestReceived(const uint8_t *public_key) {
+void Server::friendRequestReceived(const uint8_t *publicKey) {
     //Add friend back
-    int32_t friendNumber = tox_add_friend_norequest(tox, public_key);
-    if (friendNumber == -1) {
+    uint32_t friendNumber = tox_friend_add_norequest(tox, publicKey, NULL);
+
+    if (friendNumber == UINT32_MAX) {
         writeToLog("Failed to add friend");
         return;
     }
 
-    string publicKey = byteToHex(public_key, TOX_PUBLIC_KEY_SIZE);
-    writeToLog(string("Added friend ") + publicKey + " (friend number: " + to_string(friendNumber) + ")");
+    string publicKeyString = byteToHex(publicKey, TOX_PUBLIC_KEY_SIZE);
+    writeToLog(string("Added friend ") + publicKeyString + " (friend number: " + to_string(friendNumber) + ")");
 
     saveTox();
 
     //Set friend as redirection target if it is the first one
-    if (tox_count_friendlist(tox) == 1) { //TODO: Save in and load from file
-        redirectionPubKey = publicKey;
+    if (tox_self_get_friend_list_size(tox) == 1) {
+        redirectionPubKey = publicKeyString;
         redirectionFriendNumber = friendNumber;
         writeToLog("Redirecting to: " + redirectionPubKey + ", friend number: " + to_string(redirectionFriendNumber));
         saveConfig();
     }
 }
 
-void Server::callbackFriendRequestReceived(Tox *tox, const uint8_t *public_key, const uint8_t *data, uint16_t length, void *userdata) {
-    static_cast<Server *>(userdata)->friendRequestReceived(public_key);
+void Server::callbackFriendRequestReceived(Tox *tox, const uint8_t *public_key, const uint8_t *message, size_t length, void *user_data) {
+    static_cast<Server *>(user_data)->friendRequestReceived(public_key);
 }
 
-//Simply reply to all messages by sending back the same one
-void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message, uint16_t messageLength) {
+void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, const uint8_t * message, uint16_t messageLength) { //TODO: Message type
     string messageString((char*) message, messageLength);
 
     //Only accept commands from redirection target
-    if (friendnumber == redirectionFriendNumber && messageString.substr(0, 3) == string("###")) {
+    if (friendNumber == redirectionFriendNumber && type == TOX_MESSAGE_TYPE_NORMAL && messageString.substr(0, 3) == string("###")) {
         string body = messageString.substr(3);
         if (body.find(" set_name ") == 0 && body.length() > 10) {
             uint16_t uintNameArrayLength = min((int) (body.length() - 10), TOX_MAX_NAME_LENGTH);
@@ -154,7 +190,7 @@ void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message
 
             string name = body.substr(10, uintNameArrayLength);
 
-            if (tox_set_name(tox, uintNameArray, uintNameArrayLength) == 0) {
+            if (tox_self_set_name(tox, uintNameArray, uintNameArrayLength, NULL)) { //TODO: Other == 0 checks
                 writeToLog("Changed name to " + name);
                 saveTox();
             } else {
@@ -164,13 +200,13 @@ void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message
             delete[] uintNameArray;
             return;
         } else if (body.find(" set_status ") == 0 && body.length() > 12) {
-            uint16_t uintStatusArrayLength = min((int) (body.length() - 12), TOX_MAX_STATUSMESSAGE_LENGTH);
+            uint16_t uintStatusArrayLength = min((int) (body.length() - 12), TOX_MAX_STATUS_MESSAGE_LENGTH);
             uint8_t *uintStatusArray = new uint8_t[uintStatusArrayLength];
             memcpy(uintStatusArray, message + 15, uintStatusArrayLength);
 
             string status = body.substr(12, uintStatusArrayLength);
 
-            if (tox_set_status_message(tox, uintStatusArray, uintStatusArrayLength) == 0) {
+            if (tox_self_set_status_message(tox, uintStatusArray, uintStatusArrayLength, NULL)) {
                 writeToLog("Changed status to " + status);
                 saveTox();
             } else {
@@ -194,13 +230,16 @@ void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message
 
                         string sendMessage = body.substr(noNumberPos + 13, uintSendMessageArrayLength);
 
-                        if (tox_send_message(tox, friendId, uintSendMessageArray, uintSendMessageArrayLength) == 0) {
-                            writeToLog("Changed status to " + sendMessage);
-                            saveTox();
+                        TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+                        tox_friend_send_message(tox, friendId, TOX_MESSAGE_TYPE_NORMAL, uintSendMessageArray, uintSendMessageArrayLength, sendError);
+
+                        if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+                            writeToLog("Sent message \"" + sendMessage + "\"");
                         } else {
-                            writeToLog("Changing status to " + sendMessage + " failed");
+                            writeToLog("Sending message \"" + sendMessage + "\" failed");
                         }
 
+                        delete sendError;
                         delete[] uintSendMessageArray;
                         return;
                     } else {
@@ -217,41 +256,72 @@ void Server::friendMessageReceived(int32_t friendnumber, const uint8_t * message
         }
     }
 
-    uint8_t *name = new uint8_t[TOX_MAX_NAME_LENGTH];
-    int nameLength = tox_get_name(tox, friendnumber, name);
+    size_t nameLength = tox_friend_get_name_size(tox, friendNumber, NULL);
+
+    uint8_t *name = NULL;
+    bool success = false;
+
+    if (nameLength != SIZE_MAX) {
+        name = new uint8_t[nameLength];
+        success = tox_friend_get_name(tox, friendNumber, name, NULL);
+
+        if (!success) {
+            writeToLog("Failed to get friend name");
+        }
+    } else {
+        writeToLog("Failed to get friend name size");
+    }
+
+    uint8_t *sendMessage = NULL;
     int sendMessageLength = nameLength + messageLength + 2;
-    int result;
-    if (nameLength != -1 && sendMessageLength < TOX_MAX_MESSAGE_LENGTH) {
-        uint8_t *sendMessage = new uint8_t[sendMessageLength];
+    if (nameLength != SIZE_MAX && success && sendMessageLength < TOX_MAX_MESSAGE_LENGTH) { //TODO: Why does it not prefix the message with the name?
+        sendMessage = new uint8_t[sendMessageLength];
         string divider = ": ";
         memcpy(sendMessage, name, nameLength);
         memcpy(sendMessage + nameLength, divider.c_str(), 2);
         memcpy(sendMessage + nameLength + 2, message, messageLength);
-
-        result = tox_send_message(tox, redirectionFriendNumber, sendMessage, sendMessageLength);
-
-        delete[] sendMessage;
     } else {
-        result = tox_send_message(tox, redirectionFriendNumber, message, messageLength);
+        sendMessage = new uint8_t[messageLength];
+        memcpy(sendMessage, message, messageLength);
+        sendMessageLength = messageLength;
     }
+
+    TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+    tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, sendMessageLength, sendError); //TODO: Handle actions properly
+
+    if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+        writeToLog(string("Redirected message \"") + string((char *) sendMessage, sendMessageLength) + "\"");
+    } else {
+        writeToLog(string("Redirecting message \"") + string((char *) sendMessage, sendMessageLength) + "\" failed");
+    }
+
+    delete sendError;
     delete[] name;
-
-    if (result == 0) {
-        writeToLog("Failed to forward message");
-    } else {
-        writeToLog("Forwarded message");
-    }
+    delete[] sendMessage;
 }
 
-void Server::callbackFriendMessageReceived(Tox *tox, int32_t friendnumber, const uint8_t * message, uint16_t length, void *userdata) {
-    static_cast<Server *>(userdata)->friendMessageReceived(friendnumber, message, length);
+void Server::callbackFriendMessageReceived(Tox *tox, uint32_t friend_number, TOX_MESSAGE_TYPE type, const uint8_t *message, size_t length, void *user_data) {
+    static_cast<Server *>(user_data)->friendMessageReceived(friend_number, type, message, length);
+}
+
+string Server::getDataDir() {
+    string dataDirString = string(DATA_DIR);
+
+    //If the data dir contains a tilde, replace it with the user's home directory
+
+    if (DATA_DIR[0] == '~') {
+        char *homeDir = getpwuid(getuid())->pw_dir;
+        dataDirString = string(homeDir) + dataDirString.substr(1);
+    }
+
+    return dataDirString;
 }
 
 /*
  * Writes to log file on snappy systems, otherwise to cout
  */
-void Server::writeToLog(const string &text) {
-    ofstream logfile(string(DATA_DIR) + "log_000.txt", ios_base::out | ios_base::app);
+void Server::writeToLog(const string &text) { //TODO: Config switch to use cout instead (for development)
+    ofstream logfile(getDataDir() + "log_000.txt", ios_base::out | ios_base::app);
 
     if (logfile) {
         logfile << text << std::endl;
@@ -266,7 +336,7 @@ void Server::writeToLog(const string &text) {
 #define CONFIG_REDIRECTION_PUB_KEY "redirectionPubKey="
 
 void Server::loadConfig() {
-    ifstream loadFile(string(DATA_DIR) + "profile_000.conf");
+    ifstream loadFile(getDataDir() + "profile_000.conf");
 
     if (!loadFile) {
         writeToLog("Failed to open config file for loading");
@@ -284,8 +354,8 @@ void Server::loadConfig() {
 
                 hexToByte(pubKey, pubKeyArray, TOX_PUBLIC_KEY_SIZE);
 
-                int friendNumber = tox_get_friend_number(tox, pubKeyArray);
-                if (friendNumber != -1) { //TODO: What if added before program started?
+                uint32_t friendNumber = tox_friend_by_public_key(tox, pubKeyArray, NULL);
+                if (friendNumber != UINT32_MAX) { //TODO: What if added before program started?
                     redirectionPubKey = pubKey;
                     redirectionFriendNumber = friendNumber;
                     writeToLog("redirectionPubKey: " + redirectionPubKey);
@@ -307,7 +377,7 @@ void Server::loadConfig() {
 }
 
 void Server::saveConfig() {
-    ofstream saveFile(string(DATA_DIR) + "profile_000.conf");
+    ofstream saveFile(getDataDir() + "profile_000.conf");
 
     if (!saveFile) {
         writeToLog("Failed to open config file for saving");
@@ -321,56 +391,56 @@ void Server::saveConfig() {
     saveFile.close();
 }
 
-bool Server::loadTox() {
-    ifstream loadFile(string(DATA_DIR) + "profile_000.tox", ios_base::in | ios_base::binary);
+size_t Server::loadToxFileSize() {
+    ifstream loadFile(getDataDir() + "profile_000.tox", ios_base::in | ios_base::binary);
+
+    if (!loadFile) {
+        writeToLog("Failed to open tox id file for loading");
+        return -1;
+    }
+
+    loadFile.seekg(0, ios::end);
+    size_t fileSize = loadFile.tellg();
+
+    loadFile.close();
+
+    return fileSize;
+}
+
+bool Server::loadTox(const uint8_t *data, size_t fileSize) {
+    ifstream loadFile(getDataDir() + "profile_000.tox", ios_base::in | ios_base::binary);
 
     if (!loadFile) {
         writeToLog("Failed to open tox id file for loading");
         return false;
     }
 
-    loadFile.seekg(0, ios::end);
-    size_t fileSize = loadFile.tellg();
-    loadFile.seekg(0, ios::beg);
-
-    uint8_t *data = new uint8_t[fileSize];
     loadFile.read((char *) data, fileSize);
     loadFile.close();
 
-    int loadResult = tox_load(tox, data, fileSize);
+    writeToLog("Loaded tox from tox id file");
 
-    delete[] data;
-    loadFile.close();
-
-    if (loadResult == 0) {
-        writeToLog("Loaded tox status");
-        return true;
-    } else {
-        writeToLog("Failed to load tox status");
-        return false;
-    }
+    return true;
 }
 
 void Server::saveTox() {
-    ofstream saveFile(string(DATA_DIR) + "profile_000.tox", ios_base::out | ios_base::binary);
+    ofstream saveFile(getDataDir() + "profile_000.tox", ios_base::out | ios_base::binary);
 
     if (!saveFile) {
         writeToLog("Failed to open tox id file for saving");
         return;
     }
 
-    uint32_t fileSize = tox_size(tox);
-    if (fileSize > 0 && fileSize <= INT32_MAX) {
-        uint8_t *data = new uint8_t[fileSize];
-        tox_save(tox, data);
+    size_t fileSize = tox_get_savedata_size(tox);
 
-        saveFile.write((char *) data, fileSize);
+    uint8_t *data = new uint8_t[fileSize];
+    tox_get_savedata(tox, data);
 
-        delete[] data;
-        writeToLog("Saved tox status");
-    } else {
-        writeToLog("Invalid fileSize for tox status");
-    }
+    saveFile.write((char *) data, fileSize);
 
     saveFile.close();
+
+    delete[] data;
+
+    writeToLog("Saved tox status");
 }
