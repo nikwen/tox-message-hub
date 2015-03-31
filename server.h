@@ -17,6 +17,7 @@ private:
     bool connected = false;
     std::string redirectionPubKey;
     int32_t redirectionFriendNumber = -1;
+    bool writeLogToCout = false;
 
     std::string byteToHex(const uint8_t *data, uint16_t length);
     bool hexToByte(const std::string hexString, uint8_t* data, uint16_t length);
@@ -37,7 +38,7 @@ private:
     bool loadTox(const uint8_t *data, size_t fileSize);
     size_t loadToxFileSize();
     void saveConfig();
-    void loadConfig();
+    void loadConfig(bool onlyToxIndependentValues);
 };
 
 #endif // SERVER_H

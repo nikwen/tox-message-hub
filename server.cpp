@@ -7,12 +7,17 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <pwd.h>
+#include <algorithm>
 
 #include "config.h"
 
 using namespace std;
 
 Server::Server() {
+    //Determine whether to write the log messages to cout
+
+    loadConfig(true);
+
     //Create tox object
 
     Tox_Options *toxOptions = tox_options_new(NULL);
@@ -67,7 +72,7 @@ Server::Server() {
         delete loadingError;
     }
 
-    loadConfig();
+    loadConfig(false);
 
     tox_self_set_status(tox, TOX_USER_STATUS_NONE);
 
@@ -190,7 +195,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
 
             string name = body.substr(10, uintNameArrayLength);
 
-            if (tox_self_set_name(tox, uintNameArray, uintNameArrayLength, NULL)) { //TODO: Other == 0 checks
+            if (tox_self_set_name(tox, uintNameArray, uintNameArrayLength, NULL)) {
                 writeToLog("Changed name to " + name);
                 saveTox();
             } else {
@@ -274,7 +279,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
 
     uint8_t *sendMessage = NULL;
     int sendMessageLength = nameLength + messageLength + 2;
-    if (nameLength != SIZE_MAX && success && sendMessageLength < TOX_MAX_MESSAGE_LENGTH) { //TODO: Why does it not prefix the message with the name?
+    if (nameLength != SIZE_MAX && success && sendMessageLength < TOX_MAX_MESSAGE_LENGTH) {
         sendMessage = new uint8_t[sendMessageLength];
         string divider = ": ";
         memcpy(sendMessage, name, nameLength);
@@ -321,6 +326,11 @@ string Server::getDataDir() {
  * Writes to log file on snappy systems, otherwise to cout
  */
 void Server::writeToLog(const string &text) { //TODO: Config switch to use cout instead (for development)
+    if (writeLogToCout) {
+        cout << text << std::endl;
+        return;
+    }
+
     ofstream logfile(getDataDir() + "log_000.txt", ios_base::out | ios_base::app);
 
     if (logfile) {
@@ -334,8 +344,9 @@ void Server::writeToLog(const string &text) { //TODO: Config switch to use cout 
 }
 
 #define CONFIG_REDIRECTION_PUB_KEY "redirectionPubKey="
+#define CONFIG_WRITE_LOG_TO_COUT "writeLogToCout="
 
-void Server::loadConfig() {
+void Server::loadConfig(bool onlyToxIndependentValues) { //Parameter: Skip options which do rely on a valid tox object before its creation
     ifstream loadFile(getDataDir() + "profile_000.conf");
 
     if (!loadFile) {
@@ -347,7 +358,7 @@ void Server::loadConfig() {
 
     while (getline(loadFile, line)) {
         int pos;
-        if ((pos = line.find(CONFIG_REDIRECTION_PUB_KEY)) == 0) {
+        if (!onlyToxIndependentValues && (pos = line.find(CONFIG_REDIRECTION_PUB_KEY)) == 0) {
             string pubKey = line.substr(18); //CONF_REDIRECTION_PUB_KEY.length()
             if (pubKey.length() == TOX_PUBLIC_KEY_SIZE * 2) {
                 uint8_t *pubKeyArray = new uint8_t[TOX_PUBLIC_KEY_SIZE];
@@ -368,12 +379,16 @@ void Server::loadConfig() {
             } else {
                 writeToLog("Given redirectionPubKey has wrong length: " + to_string(pubKey.length()));
             }
-        } else {
-            writeToLog("Could not interpret line");
+        } else if ((pos = line.find(CONFIG_WRITE_LOG_TO_COUT)) == 0) {
+            string value = line.substr(15); //CONFIG_WRITE_LOG_TO_COUT.length()
+            std::transform(value.begin(), value.end(), value.begin(), ::tolower); //toLower()
+            writeLogToCout = (value == "true");
         }
     }
 
     loadFile.close();
+
+    writeToLog("Loaded config");
 }
 
 void Server::saveConfig() {
@@ -386,6 +401,9 @@ void Server::saveConfig() {
 
     if (!redirectionPubKey.empty()) {
         saveFile << CONFIG_REDIRECTION_PUB_KEY << redirectionPubKey << endl;
+    }
+    if (writeLogToCout) {
+        saveFile << CONFIG_WRITE_LOG_TO_COUT << to_string(writeLogToCout) << endl;
     }
 
     saveFile.close();
