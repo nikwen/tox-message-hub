@@ -256,6 +256,105 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
             } else {
                 writeToLog("No friend ID entered");
             }
+        } else if(body == " friendlist") { //TODO: Begin friendlist, end friendlist
+            TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+            tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "### BEGIN FRIENDLIST ###", 24, sendError);
+
+            if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+                writeToLog("Failed to send begin friendlist");
+                return;
+            }
+
+            size_t friendCount = tox_self_get_friend_list_size(tox);
+
+            uint32_t *friendList = new uint32_t[friendCount];
+            tox_self_get_friend_list(tox, friendList);
+
+            for (int i = 0; i < friendCount; i++) {
+                uint32_t friendNumber = friendList[i];
+
+                if (friendNumber != redirectionFriendNumber) {
+                    string numberString = to_string(friendNumber);
+
+                    size_t friendNameSize = tox_friend_get_name_size(tox, friendNumber, NULL);
+
+                    if (friendNameSize == SIZE_MAX) {
+                        writeToLog("Error with getting the friend name size");
+                        continue;
+                    }
+
+                    uint8_t *friendName = new uint8_t[friendNameSize];
+                    bool success = tox_friend_get_name(tox, friendNumber, friendName, NULL);
+
+                    if (!success) {
+                        writeToLog("Error with getting the friend name");
+                        delete[] friendName;
+                        continue;
+                    }
+
+                    size_t messageLength = 1 + numberString.length() + 1 + friendNameSize;
+
+                    uint8_t *message = new uint8_t[messageLength];
+                    message[0] = '#';
+                    memcpy(message + 1, numberString.c_str(), numberString.length());
+                    message[1 + numberString.length()] = ' ';
+                    memcpy(message + 1 + numberString.length() + 1, friendName, friendNameSize);
+
+                    TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+                    tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageLength, sendError);
+
+                    delete[] message;
+                    delete[] friendName;
+
+                    if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+                        writeToLog(string("Failed to send friend information for friend #") + numberString);
+                        continue;
+                    }
+
+                    size_t statusMessageSize = tox_friend_get_status_message_size(tox, friendNumber, NULL);
+
+                    if (statusMessageSize == SIZE_MAX) {
+                        writeToLog("Error with getting the status message size");
+                        continue;
+                    }
+
+                    uint8_t *statusMessage = new uint8_t[statusMessageSize];
+                    success = tox_friend_get_status_message(tox, friendNumber, statusMessage, NULL);
+
+                    if (!success) {
+                        writeToLog("Error with getting the status message");
+                        delete[] statusMessage;
+                        continue;
+                    }
+
+                    messageLength = 8 + statusMessageSize;
+
+                    message = new uint8_t[messageLength];
+                    memcpy(message, "Status: ", 8);
+                    memcpy(message + 8, statusMessage, statusMessageSize);
+
+                    tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageLength, sendError);
+
+                    if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+                        writeToLog(string("Failed to send status message for friend #") + numberString);
+                    }
+
+                    delete[] statusMessage;
+                    delete[] message;
+                }
+            }
+
+            sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+            tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "### END FRIENDLIST ###", 22, sendError);
+
+            if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+                writeToLog("Failed to send end friendlist");
+            }
+
+            writeToLog("Sent friend list");
+
+            delete[] friendList;
+            return;
         } else {
             writeToLog("Could not interpret command");
         }
