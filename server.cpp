@@ -98,6 +98,8 @@ Server::Server() {
     tox_callback_friend_request(tox, callbackFriendRequestReceived, this);
     tox_callback_friend_message(tox, callbackFriendMessageReceived, this);
     tox_callback_friend_connection_status(tox, callbackFriendConnectionStatus, this);
+    tox_callback_friend_name(tox, callbackFriendName, this);
+    tox_callback_friend_status_message(tox, callbackFriendStatusMessage, this);
 
     saveTox();
 }
@@ -266,6 +268,8 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
                 return;
             }
 
+            delete sendError;
+
             size_t friendCount = tox_self_get_friend_list_size(tox);
 
             uint32_t *friendList = new uint32_t[friendCount];
@@ -340,6 +344,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
                         writeToLog(string("Failed to send status message for friend #") + numberString);
                     }
 
+                    delete sendError;
                     delete[] statusMessage;
                     delete[] message;
                 }
@@ -354,6 +359,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
 
             writeToLog("Sent friend list");
 
+            delete sendError;
             delete[] friendList;
             return;
         } else {
@@ -426,7 +432,34 @@ void Server::sendMessageWithQueue(Tox *tox, uint32_t friendNumber, TOX_MESSAGE_T
 }
 
 void Server::friendConnectionStatusChanged(Tox *tox, uint32_t friendNumber, TOX_CONNECTION connectionStatus) {
-    if (connectionStatus != TOX_CONNECTION_NONE && messageQueueMap->count(friendNumber) == 1) {
+    bool friendConnected = (connectionStatus != TOX_CONNECTION_NONE);
+
+    //Notify client of connection status change while he is online
+
+    if (friendNumber != redirectionFriendNumber) {
+        string messageString = string("Connection status: #") + to_string(friendNumber) + " " + (friendConnected ? "1" : "0");
+
+        uint8_t *message = new uint8_t[messageString.length()];
+        memcpy(message, messageString.c_str(), messageString.length());
+
+        TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+        tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageString.length(), sendError);
+
+        if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+            writeToLog(string("Sent update: connection status changed for friend #") + to_string(friendNumber) + ": " + to_string(friendConnected));
+        } else {
+            writeToLog(string("Sending update failed: connection status changed for friend #") + to_string(friendNumber) + ": " + to_string(friendConnected));
+        }
+
+        delete sendError;
+        delete[] message;
+    }
+
+    //TODO: Save last state which the client saw (name, status, status message, connection status, etc.) so that the client can be updated when it comes online again
+
+    //Try to resend messages
+
+    if (friendConnected && messageQueueMap->count(friendNumber) == 1) {
         std::queue<string> *queue = (*messageQueueMap)[friendNumber];
 
         while (!queue->empty()) {
@@ -436,19 +469,21 @@ void Server::friendConnectionStatusChanged(Tox *tox, uint32_t friendNumber, TOX_
             memcpy(message, messageString.c_str(), messageString.length());
 
             TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-            sendMessageWithQueue(tox, friendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageString.length(), sendError);
+            tox_friend_send_message(tox, friendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageString.length(), sendError);
 
             if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
                 writeToLog(string("Resent message \"") + string((char *) message, messageString.length()) + "\"");
                 queue->pop();
             } else if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_FRIEND_NOT_CONNECTED) {
                 writeToLog(string("Resending message \"") + string((char *) message, messageString.length()) + "\" failed (friend offline again, will try again later)");
+                delete sendError;
                 delete[] message;
                 break;
             } else {
                 writeToLog(string("Resending message \"") + string((char *) message, messageString.length()) + "\" failed");
             }
 
+            delete sendError;
             delete[] message;
         }
     }
@@ -456,6 +491,68 @@ void Server::friendConnectionStatusChanged(Tox *tox, uint32_t friendNumber, TOX_
 
 void Server::callbackFriendConnectionStatus(Tox *tox, uint32_t friend_number, TOX_CONNECTION connection_status, void *user_data) {
     static_cast<Server *>(user_data)->friendConnectionStatusChanged(tox, friend_number, connection_status);
+}
+
+void Server::friendNameChanged(Tox *tox, uint32_t friendNumber, const uint8_t *name, size_t length) {
+    if (friendNumber == redirectionFriendNumber) {
+        return;
+    }
+
+    string friendNumberString = to_string(friendNumber);
+
+    size_t messageLength = 7 + friendNumberString.length() + 1 + length;
+    uint8_t *message = new uint8_t[messageLength];
+    memcpy(message, "Name: #", 7);
+    memcpy(message + 7, friendNumberString.c_str(), friendNumberString.length());
+    message[7 + friendNumberString.length()] = ' ';
+    memcpy(message + 7 + friendNumberString.length() + 1, name, length);
+
+    TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+    tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageLength, sendError);
+
+    if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+        writeToLog(string("Sent update: name changed for friend #") + to_string(friendNumber) + ": " + string((char *) name, length));
+    } else {
+        writeToLog(string("Sending update failed: name changed for friend #") + to_string(friendNumber) + ": " + string((char *) name, length));
+    }
+
+    delete sendError;
+    delete[] message;
+}
+
+void Server::callbackFriendName(Tox *tox, uint32_t friend_number, const uint8_t *name, size_t length, void *user_data) {
+    static_cast<Server *>(user_data)->friendNameChanged(tox, friend_number, name, length);
+}
+
+void Server::friendStatusMessageChanged(Tox *tox, uint32_t friendNumber, const uint8_t *message, size_t length) {
+    if (friendNumber == redirectionFriendNumber) {
+        return;
+    }
+
+    string friendNumberString = to_string(friendNumber);
+
+    size_t messageLength = 17 + friendNumberString.length() + 1 + length;
+    uint8_t *sendMessage = new uint8_t[messageLength];
+    memcpy(sendMessage, "Status message: #", 17);
+    memcpy(sendMessage + 17, friendNumberString.c_str(), friendNumberString.length());
+    sendMessage[17 + friendNumberString.length()] = ' ';
+    memcpy(sendMessage + 17 + friendNumberString.length() + 1, message, length);
+
+    TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+    tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, messageLength, sendError);
+
+    if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+        writeToLog(string("Sent update: status message changed for friend #") + to_string(friendNumber) + ": " + string((char *) message, length));
+    } else {
+        writeToLog(string("Sending update failed: status message changed for friend #") + to_string(friendNumber) + ": " + string((char *) message, length));
+    }
+
+    delete sendError;
+    delete[] sendMessage;
+}
+
+void Server::callbackFriendStatusMessage(Tox *tox, uint32_t friend_number, const uint8_t *message, size_t length, void *user_data) {
+    static_cast<Server *>(user_data)->friendStatusMessageChanged(tox, friend_number, message, length);
 }
 
 string Server::getDataDir() {
