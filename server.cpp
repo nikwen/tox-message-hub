@@ -56,7 +56,7 @@ Server::Server() {
     } else {
         TOX_ERR_NEW *loadingError = new TOX_ERR_NEW;
 
-        tox = tox_new(toxOptions, NULL, 0, NULL);
+        tox = tox_new(toxOptions, NULL, 0, loadingError);
 
         if (*loadingError != TOX_ERR_NEW_OK) {
             writeToLog("Failed to create new tox instance");
@@ -157,27 +157,51 @@ void Server::callbackSelfConnectionStatus(Tox *tox, TOX_CONNECTION connectionSta
     static_cast<Server *>(user_data)->selfConnectionStatusChanged(connectionStatus);
 }
 
-//Automatically add everyone who adds the bot
 void Server::friendRequestReceived(const uint8_t *publicKey) {
-    //Add friend back
-    uint32_t friendNumber = tox_friend_add_norequest(tox, publicKey, NULL);
 
-    if (friendNumber == UINT32_MAX) {
-        writeToLog("Failed to add friend");
-        return;
-    }
+    //Add first friend automatically as redirection target
+    //Further friend requests will be forwarded to the redirection target
 
-    string publicKeyString = byteToHex(publicKey, TOX_PUBLIC_KEY_SIZE);
-    writeToLog(string("Added friend ") + publicKeyString + " (friend number: " + to_string(friendNumber) + ")");
+    if (tox_self_get_friend_list_size(tox) == 0) {
 
-    saveTox();
+        //Add friend back
+        redirectionFriendNumber = tox_friend_add_norequest(tox, publicKey, NULL);
 
-    //Set friend as redirection target if it is the first one
-    if (tox_self_get_friend_list_size(tox) == 1) {
-        redirectionPubKey = publicKeyString;
-        redirectionFriendNumber = friendNumber;
+        if (redirectionFriendNumber == UINT32_MAX) {
+            writeToLog("Failed to add redirection target friend");
+            return;
+        }
+
+        saveTox();
+
+        //Set friend as redirection target if it is the first one
+
+        redirectionPubKey = byteToHex(publicKey, TOX_PUBLIC_KEY_SIZE);
+
         writeToLog("Redirecting to: " + redirectionPubKey + ", friend number: " + to_string(redirectionFriendNumber));
         saveConfig();
+    } else {
+        string publicKeyString = byteToHex(publicKey, TOX_PUBLIC_KEY_SIZE);
+
+        friendRequestPublicKeyList->push_back(publicKeyString);
+
+        size_t messageLength = 28 + TOX_PUBLIC_KEY_SIZE * 2;
+
+        uint8_t *message = new uint8_t[messageLength];
+        memcpy(message, "Pending friend request from ", 28);
+        memcpy(message + 28, publicKeyString.c_str(), TOX_PUBLIC_KEY_SIZE * 2);
+
+        TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+        sendMessageWithQueue(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageLength, sendError);
+
+        if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+            writeToLog("Sent update: Pending friend request from " + publicKeyString);
+        } else {
+            writeToLog("Sending update failed: Pending friend request from " + publicKeyString);
+        }
+
+        delete sendError;
+        delete[] message;
     }
 }
 
@@ -259,7 +283,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
             } else {
                 writeToLog("No friend ID entered");
             }
-        } else if(body == " friendlist") { //TODO: Begin friendlist, end friendlist
+        } else if (body == " friendlist") {
             TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
             tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "### BEGIN FRIENDLIST ###", 24, sendError);
 
@@ -362,6 +386,108 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
             delete sendError;
             delete[] friendList;
             return;
+        } else if (body == " pending_fr") {
+            TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+            tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "### BEGIN FRIEND_REQUESTS ###", 29, sendError);
+
+            if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+                writeToLog("Failed to send begin friend requests");
+                return;
+            }
+
+            delete sendError;
+
+            for (int i = 0; i < friendRequestPublicKeyList->size(); i++) {
+                string publicKey = friendRequestPublicKeyList->at(i);
+
+                TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+                tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) publicKey.c_str(), TOX_PUBLIC_KEY_SIZE * 2, sendError);
+
+                if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+                    writeToLog("Failed to send public key " + publicKey);
+                }
+
+                delete sendError;
+            }
+
+            sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+            tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "### END FRIEND_REQUESTS ###", 27, sendError);
+
+            if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+                writeToLog("Failed to send end friend requests");
+            }
+
+            writeToLog("Sent friend request list");
+
+            delete sendError;
+            return;
+        } else if (body.find(" accept_fr ") == 0 && body.length() > 11) {
+            if (body.length() == 11 + TOX_PUBLIC_KEY_SIZE * 2) {
+                string publicKeyString = body.substr(11);
+
+                //Check if pending friend request exists for given public key
+
+                int i;
+                for (i = 0; i < friendRequestPublicKeyList->size(); i++) {
+                    if (friendRequestPublicKeyList->at(i) == publicKeyString) {
+                        break;
+                    }
+                }
+
+                if (i != friendRequestPublicKeyList->size()) {
+                    uint8_t *uintPublicKeyArray = new uint8_t[TOX_PUBLIC_KEY_SIZE];
+                    hexToByte(string((char *) message + 14, TOX_PUBLIC_KEY_SIZE * 2), uintPublicKeyArray, TOX_PUBLIC_KEY_SIZE);
+
+                    uint32_t friendNumber = tox_friend_add_norequest(tox, uintPublicKeyArray, NULL);
+
+                    if (friendNumber == UINT32_MAX) {
+                        writeToLog("Failed to add friend");
+                        return;
+                    }
+
+                    writeToLog(string("Added friend ") + publicKeyString + " (friend number: " + to_string(friendNumber) + ")");
+
+                    saveTox();
+
+                    //Remove friend request from list
+
+                    friendRequestPublicKeyList->erase(friendRequestPublicKeyList->begin() + i);
+
+                    delete[] uintPublicKeyArray;
+                    return;
+                } else {
+                    writeToLog("No pending friend request could be found for the given public key");
+                }
+            } else {
+                writeToLog("Wrong length for public key");
+            }
+        } else if (body.find(" decline_fr ") == 0 && body.length() > 12) {
+            if (body.length() == 12 + TOX_PUBLIC_KEY_SIZE * 2) {
+                string publicKeyString = body.substr(12);
+
+                //Check if pending friend request exists for given public key
+
+                int i;
+                for (i = 0; i < friendRequestPublicKeyList->size(); i++) {
+                    if (friendRequestPublicKeyList->at(i) == publicKeyString) {
+                        break;
+                    }
+                }
+
+                if (i != friendRequestPublicKeyList->size()) {
+                    //Remove friend request from list
+
+                    friendRequestPublicKeyList->erase(friendRequestPublicKeyList->begin() + i);
+
+                    writeToLog("Removed friend request from public key " + publicKeyString);
+
+                    return;
+                } else {
+                    writeToLog("No pending friend request could be found for the given public key");
+                }
+            } else {
+                writeToLog("Wrong length for public key");
+            }
         } else {
             writeToLog("Could not interpret command");
         }

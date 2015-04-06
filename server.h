@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <queue>
+#include <vector>
 
 #include "tox/tox.h"
 
@@ -20,6 +21,8 @@ private:
     std::string redirectionPubKey;
     uint32_t redirectionFriendNumber = UINT32_MAX;
     bool writeLogToCout = false;
+
+    std::vector<std::string> *friendRequestPublicKeyList = new std::vector<std::string>;
 
     std::map<uint32_t, std::queue<std::string>*> *messageQueueMap = new std::map<uint32_t, std::queue<std::string>*>;
 
