@@ -820,8 +820,10 @@ void Server::saveConfig() {
         saveFile << CONFIG_REDIRECTION_PUB_KEY << redirectionPubKey << endl;
     }
     if (writeLogToCout) {
-        saveFile << CONFIG_WRITE_LOG_TO_COUT << to_string(writeLogToCout) << endl; //TODO: Needs to output "true" instead of "1"
+        saveFile << CONFIG_WRITE_LOG_TO_COUT << "true" << endl;
     }
+
+    writeToLog("Saved config");
 
     saveFile.close();
 }
