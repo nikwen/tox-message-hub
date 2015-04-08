@@ -112,6 +112,8 @@ void Server::startLoop() {
 }
 
 string Server::byteToHex(const uint8_t *data, uint16_t length) {
+    //If we ever decide to use upper case letters here, make sure to change all tolower transforms to toupper transforms!
+
     char hexString[length * 2];
     static const char hexChars[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
@@ -421,7 +423,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
 
             delete sendError;
             return;
-        } else if (body.find(" accept_fr ") == 0 && body.length() > 11) {
+        } else if (body.find(" accept_fr ") == 0 && body.length() > 11) { //TODO: to lower
             if (body.length() == 11 + TOX_PUBLIC_KEY_SIZE * 2) {
                 string publicKeyString = body.substr(11);
 
@@ -461,7 +463,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
             } else {
                 writeToLog("Wrong length for public key");
             }
-        } else if (body.find(" decline_fr ") == 0 && body.length() > 12) {
+        } else if (body.find(" decline_fr ") == 0 && body.length() > 12) { //TODO: to lower
             if (body.length() == 12 + TOX_PUBLIC_KEY_SIZE * 2) {
                 string publicKeyString = body.substr(12);
 
@@ -487,6 +489,49 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
                 }
             } else {
                 writeToLog("Wrong length for public key");
+            }
+        } else if (body.find(" add ") == 0 && body.length() > 5) {
+            if (body.length() == 5 + TOX_ADDRESS_SIZE * 2) {
+                string addressString = body.substr(5);
+                std::transform(addressString.begin(), addressString.end(), addressString.begin(), ::tolower); //For comparison with pending friend requests below
+
+                uint8_t *uintAddressArray = new uint8_t[TOX_ADDRESS_SIZE];
+                hexToByte(string((char *) message + 8, TOX_ADDRESS_SIZE * 2), uintAddressArray, TOX_ADDRESS_SIZE);
+
+                //Check if pending friend request exists for the given address
+                //If one exists, use tox_friend_add_norequest()
+
+                int i;
+                for (i = 0; i < friendRequestPublicKeyList->size(); i++) {
+                    if (addressString.find(friendRequestPublicKeyList->at(i)) == 0) { //Given address has public key from friend request
+                        break;
+                    }
+                }
+
+                uint32_t friendNumber;
+
+                if (i != friendRequestPublicKeyList->size()) {
+                    friendNumber = tox_friend_add_norequest(tox, uintAddressArray, NULL); //Does not use any further bytes from address than TOX_PUBLIC_KEY_SIZE
+                } else {
+                    friendNumber = tox_friend_add(tox, uintAddressArray, (uint8_t *) "Please add me on Tox", 20, NULL);
+                }
+
+                if (friendNumber == UINT32_MAX) {
+                    writeToLog("Failed to add friend");
+                    return;
+                } else if (i != friendRequestPublicKeyList->size()) {
+                    //If a pending friend request exists, remove it from the list now
+                    friendRequestPublicKeyList->erase(friendRequestPublicKeyList->begin() + i);
+                }
+
+                writeToLog(string("Added friend ") + addressString + " (friend number: " + to_string(friendNumber) + ")");
+
+                saveTox();
+
+                delete[] uintAddressArray;
+                return;
+            } else {
+                writeToLog("Wrong length for friend address");
             }
         } else {
             writeToLog("Could not interpret command");
@@ -775,7 +820,7 @@ void Server::saveConfig() {
         saveFile << CONFIG_REDIRECTION_PUB_KEY << redirectionPubKey << endl;
     }
     if (writeLogToCout) {
-        saveFile << CONFIG_WRITE_LOG_TO_COUT << to_string(writeLogToCout) << endl;
+        saveFile << CONFIG_WRITE_LOG_TO_COUT << to_string(writeLogToCout) << endl; //TODO: Needs to output "true" instead of "1"
     }
 
     saveFile.close();
