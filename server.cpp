@@ -423,9 +423,10 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
 
             delete sendError;
             return;
-        } else if (body.find(" accept_fr ") == 0 && body.length() > 11) { //TODO: to lower
+        } else if (body.find(" accept_fr ") == 0 && body.length() > 11) {
             if (body.length() == 11 + TOX_PUBLIC_KEY_SIZE * 2) {
                 string publicKeyString = body.substr(11);
+                std::transform(publicKeyString.begin(), publicKeyString.end(), publicKeyString.begin(), ::tolower); //For comparison with pending friend requests
 
                 //Check if pending friend request exists for given public key
 
@@ -463,9 +464,10 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
             } else {
                 writeToLog("Wrong length for public key");
             }
-        } else if (body.find(" decline_fr ") == 0 && body.length() > 12) { //TODO: to lower
+        } else if (body.find(" decline_fr ") == 0 && body.length() > 12) {
             if (body.length() == 12 + TOX_PUBLIC_KEY_SIZE * 2) {
                 string publicKeyString = body.substr(12);
+                std::transform(publicKeyString.begin(), publicKeyString.end(), publicKeyString.begin(), ::tolower); //For comparison with pending friend requests
 
                 //Check if pending friend request exists for given public key
 
@@ -493,7 +495,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
         } else if (body.find(" add ") == 0 && body.length() > 5) {
             if (body.length() == 5 + TOX_ADDRESS_SIZE * 2) {
                 string addressString = body.substr(5);
-                std::transform(addressString.begin(), addressString.end(), addressString.begin(), ::tolower); //For comparison with pending friend requests below
+                std::transform(addressString.begin(), addressString.end(), addressString.begin(), ::tolower); //For comparison with pending friend requests
 
                 uint8_t *uintAddressArray = new uint8_t[TOX_ADDRESS_SIZE];
                 hexToByte(string((char *) message + 8, TOX_ADDRESS_SIZE * 2), uintAddressArray, TOX_ADDRESS_SIZE);
