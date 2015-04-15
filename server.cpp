@@ -254,7 +254,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
             int noNumberPos = text.find_first_not_of("0123456789");
             int spacePos = text.find(" ");
             if (spacePos > 0 && noNumberPos == spacePos) {
-                uint32_t friendId = atoi(text.substr(0, noNumberPos).c_str());
+                uint32_t friendId = atoi(text.substr(0, noNumberPos).c_str()); //TODO: stoul (also supports finding out noNumberPos!)
                 if (tox_friend_exists(tox, friendId)) {
                     int sendMessageLength = text.length() - noNumberPos - 1;
                     if (sendMessageLength > 0) {
@@ -535,6 +535,40 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
             } else {
                 writeToLog("Wrong length for friend address");
             }
+        } else if (body.find(" delete_friend ") == 0 && body.length() > 15) {
+            string friendNumberString = body.substr(15);
+            uint32_t friendNumber;
+
+            try {
+                friendNumber = stoul(friendNumberString);
+            } catch (...) {
+                writeToLog("Failed to parse friend number");
+                return;
+            }
+
+            if (friendNumber == redirectionFriendNumber) {
+                writeToLog("Cannot remove redirection target from friend list!");
+                return;
+            }
+
+            TOX_ERR_FRIEND_DELETE *error = new TOX_ERR_FRIEND_DELETE;
+
+            if (tox_friend_delete(tox, friendNumber, error)) {
+                //Delete pending messages for given friend number as it can be reused later
+
+                if (messageQueueMap->count(friendNumber) > 0) {
+                    messageQueueMap->erase(friendNumber);
+                }
+
+                writeToLog("Removed friend #" + to_string(friendNumber));
+            } else if (*error = TOX_ERR_FRIEND_DELETE_FRIEND_NOT_FOUND) {
+                writeToLog("Could not find friend for given friend number: " + to_string(friendNumber));
+            } else {
+                writeToLog("Failed to delete friend #" + to_string(friendNumber));
+            }
+
+            delete error;
+            return;
         } else {
             writeToLog("Could not interpret command");
         }
@@ -744,7 +778,7 @@ string Server::getDataDir() {
 /*
  * Writes to log file on snappy systems, otherwise to cout
  */
-void Server::writeToLog(const string &text) { //TODO: Config switch to use cout instead (for development)
+void Server::writeToLog(const string &text) {
     if (writeLogToCout) {
         cout << text << std::endl;
         return;
