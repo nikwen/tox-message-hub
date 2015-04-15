@@ -53,7 +53,8 @@ private:
     bool loadTox(const uint8_t *data, size_t fileSize);
     size_t loadToxFileSize();
     void saveConfig();
-    void loadConfig(bool onlyToxIndependentValues);
+    void loadConfig();
+    void loadGlobalConfig();
 };
 
 #endif // SERVER_H

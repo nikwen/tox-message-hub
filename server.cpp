@@ -16,7 +16,7 @@ using namespace std;
 Server::Server() {
     //Determine whether to write the log messages to cout
 
-    loadConfig(true);
+    loadGlobalConfig();
 
     //Create tox object
 
@@ -72,7 +72,7 @@ Server::Server() {
         delete loadingError;
     }
 
-    loadConfig(false);
+    loadConfig();
 
     tox_self_set_status(tox, TOX_USER_STATUS_NONE);
 
@@ -763,19 +763,43 @@ void Server::writeToLog(const string &text) { //TODO: Config switch to use cout 
 #define CONFIG_REDIRECTION_PUB_KEY "redirectionPubKey="
 #define CONFIG_WRITE_LOG_TO_COUT "writeLogToCout="
 
-void Server::loadConfig(bool onlyToxIndependentValues) { //Parameter: Skip options which do rely on a valid tox object before its creation
-    ifstream loadFile(getDataDir() + "profile_000.conf");
+void Server::loadGlobalConfig() {
+    ifstream loadFile(getDataDir() + "global.conf");
 
     if (!loadFile) {
-        writeToLog("Failed to open config file for loading");
+        writeToLog("Failed to open global config file for loading");
         return;
     }
 
     string line;
 
     while (getline(loadFile, line)) {
-        int pos;
-        if (!onlyToxIndependentValues && (pos = line.find(CONFIG_REDIRECTION_PUB_KEY)) == 0) {
+        if (line.find(CONFIG_WRITE_LOG_TO_COUT) == 0) {
+            string value = line.substr(15); //CONFIG_WRITE_LOG_TO_COUT.length()
+            std::transform(value.begin(), value.end(), value.begin(), ::tolower);
+            writeLogToCout = (value == "true");
+        } else {
+            writeToLog("Global config: Could not interpret line");
+        }
+    }
+
+    loadFile.close();
+
+    writeToLog("Loaded global config");
+}
+
+void Server::loadConfig() {
+    ifstream loadFile(getDataDir() + "profile_000.conf");
+
+    if (!loadFile) {
+        writeToLog("Failed to open profile config file for loading");
+        return;
+    }
+
+    string line;
+
+    while (getline(loadFile, line)) {
+        if (line.find(CONFIG_REDIRECTION_PUB_KEY) == 0) {
             string pubKey = line.substr(18); //CONF_REDIRECTION_PUB_KEY.length()
             if (pubKey.length() == TOX_PUBLIC_KEY_SIZE * 2) {
                 uint8_t *pubKeyArray = new uint8_t[TOX_PUBLIC_KEY_SIZE];
@@ -783,7 +807,7 @@ void Server::loadConfig(bool onlyToxIndependentValues) { //Parameter: Skip optio
                 hexToByte(pubKey, pubKeyArray, TOX_PUBLIC_KEY_SIZE);
 
                 uint32_t friendNumber = tox_friend_by_public_key(tox, pubKeyArray, NULL);
-                if (friendNumber != UINT32_MAX) { //TODO: What if added before program started?
+                if (friendNumber != UINT32_MAX) {
                     redirectionPubKey = pubKey;
                     redirectionFriendNumber = friendNumber;
                     writeToLog("redirectionPubKey: " + redirectionPubKey);
@@ -796,34 +820,29 @@ void Server::loadConfig(bool onlyToxIndependentValues) { //Parameter: Skip optio
             } else {
                 writeToLog("Given redirectionPubKey has wrong length: " + to_string(pubKey.length()));
             }
-        } else if ((pos = line.find(CONFIG_WRITE_LOG_TO_COUT)) == 0) {
-            string value = line.substr(15); //CONFIG_WRITE_LOG_TO_COUT.length()
-            std::transform(value.begin(), value.end(), value.begin(), ::tolower); //toLower()
-            writeLogToCout = (value == "true");
+        } else {
+            writeToLog("Profile config: Could not interpret line");
         }
     }
 
     loadFile.close();
 
-    writeToLog("Loaded config");
+    writeToLog("Loaded profile config");
 }
 
 void Server::saveConfig() {
     ofstream saveFile(getDataDir() + "profile_000.conf");
 
     if (!saveFile) {
-        writeToLog("Failed to open config file for saving");
+        writeToLog("Failed to open profile config file for saving");
         return;
     }
 
     if (!redirectionPubKey.empty()) {
         saveFile << CONFIG_REDIRECTION_PUB_KEY << redirectionPubKey << endl;
     }
-    if (writeLogToCout) {
-        saveFile << CONFIG_WRITE_LOG_TO_COUT << "true" << endl;
-    }
 
-    writeToLog("Saved config");
+    writeToLog("Saved profile config");
 
     saveFile.close();
 }
