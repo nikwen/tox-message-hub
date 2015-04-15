@@ -20,7 +20,7 @@ if(Snappy)
     set(DATA_DIR_PREFIX "/var/lib/apps/${PROJECT_NAME}.nikwen")
     set(DATA_DIR "${DATA_DIR_PREFIX}/${VERSION_NUMBER}/")
 else(Snappy)
-    set(DATA_DIR "~/.local/share/tox-message-hub/") #TODO: Create dir
+    set(DATA_DIR "~/.local/share/tox-message-hub/")
 endif(Snappy)
 
 target_link_libraries(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/libs/${ARCH_DIR_NAME}/libtoxcore.so)
