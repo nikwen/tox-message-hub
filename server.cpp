@@ -305,74 +305,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
                 uint32_t friendNumber = friendList[i];
 
                 if (friendNumber != redirectionFriendNumber) {
-                    string numberString = to_string(friendNumber);
-
-                    size_t friendNameSize = tox_friend_get_name_size(tox, friendNumber, NULL);
-
-                    if (friendNameSize == SIZE_MAX) {
-                        writeToLog("Error with getting the friend name size");
-                        continue;
-                    }
-
-                    uint8_t *friendName = new uint8_t[friendNameSize];
-                    bool success = tox_friend_get_name(tox, friendNumber, friendName, NULL);
-
-                    if (!success) {
-                        writeToLog("Error with getting the friend name");
-                        delete[] friendName;
-                        continue;
-                    }
-
-                    size_t messageLength = 1 + numberString.length() + 1 + friendNameSize;
-
-                    uint8_t *message = new uint8_t[messageLength];
-                    message[0] = '#';
-                    memcpy(message + 1, numberString.c_str(), numberString.length());
-                    message[1 + numberString.length()] = ' ';
-                    memcpy(message + 1 + numberString.length() + 1, friendName, friendNameSize);
-
-                    TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-                    tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageLength, sendError);
-
-                    delete[] message;
-                    delete[] friendName;
-
-                    if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
-                        writeToLog(string("Failed to send friend information for friend #") + numberString);
-                        continue;
-                    }
-
-                    size_t statusMessageSize = tox_friend_get_status_message_size(tox, friendNumber, NULL);
-
-                    if (statusMessageSize == SIZE_MAX) {
-                        writeToLog("Error with getting the status message size");
-                        continue;
-                    }
-
-                    uint8_t *statusMessage = new uint8_t[statusMessageSize];
-                    success = tox_friend_get_status_message(tox, friendNumber, statusMessage, NULL);
-
-                    if (!success) {
-                        writeToLog("Error with getting the status message");
-                        delete[] statusMessage;
-                        continue;
-                    }
-
-                    messageLength = 8 + statusMessageSize;
-
-                    message = new uint8_t[messageLength];
-                    memcpy(message, "Status: ", 8);
-                    memcpy(message + 8, statusMessage, statusMessageSize);
-
-                    tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageLength, sendError);
-
-                    if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
-                        writeToLog(string("Failed to send status message for friend #") + numberString);
-                    }
-
-                    delete sendError;
-                    delete[] statusMessage;
-                    delete[] message;
+                    sendFriendUpdate(friendNumber);
                 }
             }
 
@@ -760,6 +693,88 @@ void Server::friendStatusMessageChanged(Tox *tox, uint32_t friendNumber, const u
 
 void Server::callbackFriendStatusMessage(Tox *tox, uint32_t friend_number, const uint8_t *message, size_t length, void *user_data) {
     static_cast<Server *>(user_data)->friendStatusMessageChanged(tox, friend_number, message, length);
+}
+
+void Server::sendFriendUpdate(uint32_t friendNumber) {
+    if (friendNumber == redirectionFriendNumber) {
+        writeToLog("Cannot send update about redirection target");
+        return;
+    }
+
+    string numberString = to_string(friendNumber);
+
+    bool friendConnected = (tox_friend_get_connection_status(tox, friendNumber, NULL) != TOX_CONNECTION_NONE);
+
+    size_t friendNameSize = tox_friend_get_name_size(tox, friendNumber, NULL);
+
+    if (friendNameSize == SIZE_MAX) {
+        writeToLog("Failed to get friend name size");
+        return;
+    }
+
+    uint8_t *friendName = new uint8_t[friendNameSize];
+    bool success = tox_friend_get_name(tox, friendNumber, friendName, NULL);
+
+    if (!success) {
+        writeToLog("Failed to get friend name");
+        delete[] friendName;
+        return;
+    }
+
+    size_t statusMessageSize = tox_friend_get_status_message_size(tox, friendNumber, NULL);
+
+    if (statusMessageSize == SIZE_MAX) {
+        writeToLog("Failed to get status message size");
+        delete[] friendName;
+        return;
+    }
+
+    uint8_t *statusMessage = new uint8_t[statusMessageSize];
+    success = tox_friend_get_status_message(tox, friendNumber, statusMessage, NULL);
+
+    if (!success) {
+        writeToLog("Failed to get status message");
+        delete[] friendName;
+        delete[] statusMessage;
+        return;
+    }
+
+    size_t messageLength = 4 * 3 + 1 + numberString.length() + 3 + friendNameSize + 1 + statusMessageSize;
+
+    uint8_t *message = new uint8_t[messageLength];
+    memcpy(message, intToString(numberString.length(), 4).c_str(), 4);
+    memcpy(message + 4, intToString(friendNameSize, 4).c_str(), 4);
+    memcpy(message + 8, intToString(statusMessageSize, 4).c_str(), 4);
+    message[12] = ' ';
+    memcpy(message + 13, numberString.c_str(), numberString.length());
+    message[13 + numberString.length()] = ' ';
+    message[13 + numberString.length() + 1] = friendConnected ? '1' : '0';
+    message[13 + numberString.length() + 2] = ' ';
+    memcpy(message + 13 + numberString.length() + 3, friendName, friendNameSize);
+    message[13 + numberString.length() + 3 + friendNameSize] = ' ';
+    memcpy(message + 13 + numberString.length() + 3 + friendNameSize + 1, statusMessage, statusMessageSize);
+
+    TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+    tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageLength, sendError);
+
+    if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+        writeToLog(string("Failed to send friend update for friend #") + numberString);
+    }
+
+    delete sendError;
+    delete[] friendName;
+    delete[] statusMessage;
+    delete[] message;
+}
+
+string Server::intToString(int value, int digits) {
+    string result = to_string(value);
+
+    while (result.length() < digits) {
+        result = '0' + result;
+    }
+
+    return result;
 }
 
 string Server::getDataDir() {

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "tox/tox.h"
+#include "serverstate.h"
 
 class Server
 {
@@ -25,10 +26,14 @@ private:
     std::vector<std::string> *friendRequestPublicKeyList = new std::vector<std::string>;
 
     std::map<uint32_t, std::queue<std::string>*> *messageQueueMap = new std::map<uint32_t, std::queue<std::string>*>;
+    ServerState *redirectionServerState = new ServerState;
 
     std::string byteToHex(const uint8_t *data, uint16_t length);
     bool hexToByte(const std::string hexString, uint8_t* data, uint16_t length);
     int hexCharToInt(char input);
+    std::string intToString(int value, int digits);
+
+    void sendFriendUpdate(uint32_t friendNumber);
 
     void sendMessageWithQueue(Tox *tox, uint32_t friendNumber, TOX_MESSAGE_TYPE messageType, uint8_t *message, size_t messageLength, TOX_ERR_FRIEND_SEND_MESSAGE *error);
 
