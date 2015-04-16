@@ -574,13 +574,29 @@ void Server::sendMessageWithQueue(Tox *tox, uint32_t friendNumber, TOX_MESSAGE_T
 void Server::friendConnectionStatusChanged(Tox *tox, uint32_t friendNumber, TOX_CONNECTION connectionStatus) {
     bool friendConnected = (connectionStatus != TOX_CONNECTION_NONE);
 
-    //Notify client of connection status change while he is online
-
     if (friendNumber != redirectionFriendNumber) {
-        sendFriendUpdate(friendNumber);
-    }
+        //Notify client of connection status changes while he is online
 
-    //TODO: Save last state which the client saw (name, status, status message, connection status, etc.) so that the client can be updated when it comes online again
+        sendFriendUpdate(friendNumber);
+    } else if (friendConnected) {
+        //Update client about what happened in its absence
+        //Iterate through all friends and send updates if something has changed
+
+        size_t friendCount = tox_self_get_friend_list_size(tox);
+
+        uint32_t *friendList = new uint32_t[friendCount];
+        tox_self_get_friend_list(tox, friendList);
+
+        for (int i = 0; i < friendCount; i++) {
+            uint32_t friendNumber = friendList[i];
+
+            if (friendNumber != redirectionFriendNumber) {
+                sendFriendUpdate(friendNumber, true);
+            }
+        }
+
+        delete[] friendList;
+    }
 
     //Try to resend messages
 
@@ -642,10 +658,13 @@ void Server::callbackFriendStatusMessage(Tox *tox, uint32_t friend_number, const
     static_cast<Server *>(user_data)->friendStatusMessageChanged(tox, friend_number, message, length);
 }
 
+//TODO: Use name when friend was last seen
+//TODO: Schedule update method which sends all updates when a client comes online at once (by waiting for a short period of time after the first update)
+
 /*
  * Returns true on success
  */
-bool Server::sendFriendUpdate(uint32_t friendNumber) { //TODO: Schedule update method which sends all updates when a client comes online at once (by waiting for a short period of time after the first update)
+bool Server::sendFriendUpdate(uint32_t friendNumber, bool onlyChanges) {
     if (friendNumber == redirectionFriendNumber) {
         writeToLog("Cannot send update about redirection target");
         return false;
@@ -689,6 +708,21 @@ bool Server::sendFriendUpdate(uint32_t friendNumber) { //TODO: Schedule update m
         return false;
     }
 
+    //Return in case nothing has changed and only changes have been requested
+
+    if (onlyChanges && redirectionServerState->friendMap.count(friendNumber) > 0) {
+        ServerState::Friend *savedFriend = redirectionServerState->friendMap[friendNumber];
+
+        if (savedFriend->name != nullptr && savedFriend->nameSize == nameSize && memcmp(savedFriend->name, name, nameSize) == 0 &&
+                savedFriend->statusMessage != nullptr && savedFriend->statusMessageSize == statusMessageSize && memcmp(savedFriend->statusMessage, statusMessage, statusMessageSize) == 0 &&
+                savedFriend->connected == friendConnected) {
+
+            delete[] name;
+            delete[] statusMessage;
+            return false;
+        }
+    }
+
     size_t messageLength = 4 * 3 + 1 + numberString.length() + 3 + nameSize + 1 + statusMessageSize;
 
     uint8_t *message = new uint8_t[messageLength];
@@ -721,27 +755,33 @@ bool Server::sendFriendUpdate(uint32_t friendNumber) { //TODO: Schedule update m
         ServerState::Friend *savedFriend = redirectionServerState->friendMap[friendNumber];
 
         //Do not modify the struct if it is already filled with the correct data
+        //If it is filled with incorrect data, delete the current values and set new ones
+        //If nothing above is true, set the new data
 
         bool equal = false;
 
-        if (savedFriend->name != nullptr && !(equal = (strcmp((char *) savedFriend->name, (char *) name) == 0))) {
+        if (savedFriend->name != nullptr && !(equal = (savedFriend->nameSize == nameSize && memcmp(savedFriend->name, name, nameSize) == 0))) {
+            savedFriend->nameSize = 0;
             delete[] savedFriend->name;
         }
 
         if (!equal) {
             savedFriend->name = new uint8_t[nameSize];
             memcpy(savedFriend->name, name, nameSize);
+            savedFriend->nameSize = nameSize;
         }
 
         equal = false;
 
-        if (savedFriend->statusMessage != nullptr && !(equal = (strcmp((char *) savedFriend->statusMessage, (char *) statusMessage) == 0))) {
+        if (savedFriend->statusMessage != nullptr && !(equal = (savedFriend->statusMessageSize == statusMessageSize && memcmp(savedFriend->statusMessage, statusMessage, statusMessageSize) == 0))) {
+            savedFriend->statusMessageSize = 0;
             delete[] savedFriend->statusMessage;
         }
 
         if (!equal) {
             savedFriend->statusMessage = new uint8_t[statusMessageSize];
             memcpy(savedFriend->statusMessage, statusMessage, statusMessageSize);
+            savedFriend->statusMessageSize = statusMessageSize;
         }
 
         savedFriend->connected = friendConnected;
