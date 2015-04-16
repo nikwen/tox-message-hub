@@ -33,7 +33,7 @@ private:
     int hexCharToInt(char input);
     std::string intToString(int value, int digits);
 
-    void sendFriendUpdate(uint32_t friendNumber);
+    bool sendFriendUpdate(uint32_t friendNumber);
 
     void sendMessageWithQueue(Tox *tox, uint32_t friendNumber, TOX_MESSAGE_TYPE messageType, uint8_t *message, size_t messageLength, TOX_ERR_FRIEND_SEND_MESSAGE *error);
 
