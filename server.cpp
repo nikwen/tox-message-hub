@@ -185,7 +185,7 @@ void Server::friendRequestReceived(const uint8_t *publicKey) {
     } else {
         string publicKeyString = byteToHex(publicKey, TOX_PUBLIC_KEY_SIZE);
 
-        friendRequestPublicKeyList->push_back(publicKeyString);
+        friendRequestPublicKeyList.push_back(publicKeyString);
 
         size_t messageLength = 28 + TOX_PUBLIC_KEY_SIZE * 2;
 
@@ -332,8 +332,8 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
 
             delete sendError;
 
-            for (int i = 0; i < friendRequestPublicKeyList->size(); i++) {
-                string publicKey = friendRequestPublicKeyList->at(i);
+            for (int i = 0; i < friendRequestPublicKeyList.size(); i++) {
+                string publicKey = friendRequestPublicKeyList.at(i);
 
                 TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
                 tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) publicKey.c_str(), TOX_PUBLIC_KEY_SIZE * 2, sendError);
@@ -364,13 +364,13 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
                 //Check if pending friend request exists for given public key
 
                 int i;
-                for (i = 0; i < friendRequestPublicKeyList->size(); i++) {
-                    if (friendRequestPublicKeyList->at(i) == publicKeyString) {
+                for (i = 0; i < friendRequestPublicKeyList.size(); i++) {
+                    if (friendRequestPublicKeyList.at(i) == publicKeyString) {
                         break;
                     }
                 }
 
-                if (i != friendRequestPublicKeyList->size()) {
+                if (i != friendRequestPublicKeyList.size()) {
                     uint8_t *uintPublicKeyArray = new uint8_t[TOX_PUBLIC_KEY_SIZE];
                     hexToByte(string((char *) message + 14, TOX_PUBLIC_KEY_SIZE * 2), uintPublicKeyArray, TOX_PUBLIC_KEY_SIZE);
 
@@ -387,7 +387,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
 
                     //Remove friend request from list
 
-                    friendRequestPublicKeyList->erase(friendRequestPublicKeyList->begin() + i);
+                    friendRequestPublicKeyList.erase(friendRequestPublicKeyList.begin() + i);
 
                     delete[] uintPublicKeyArray;
                     return;
@@ -405,16 +405,16 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
                 //Check if pending friend request exists for given public key
 
                 int i;
-                for (i = 0; i < friendRequestPublicKeyList->size(); i++) {
-                    if (friendRequestPublicKeyList->at(i) == publicKeyString) {
+                for (i = 0; i < friendRequestPublicKeyList.size(); i++) {
+                    if (friendRequestPublicKeyList.at(i) == publicKeyString) {
                         break;
                     }
                 }
 
-                if (i != friendRequestPublicKeyList->size()) {
+                if (i != friendRequestPublicKeyList.size()) {
                     //Remove friend request from list
 
-                    friendRequestPublicKeyList->erase(friendRequestPublicKeyList->begin() + i);
+                    friendRequestPublicKeyList.erase(friendRequestPublicKeyList.begin() + i);
 
                     writeToLog("Removed friend request from public key " + publicKeyString);
 
@@ -437,15 +437,15 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
                 //If one exists, use tox_friend_add_norequest()
 
                 int i;
-                for (i = 0; i < friendRequestPublicKeyList->size(); i++) {
-                    if (addressString.find(friendRequestPublicKeyList->at(i)) == 0) { //Given address has public key from friend request
+                for (i = 0; i < friendRequestPublicKeyList.size(); i++) {
+                    if (addressString.find(friendRequestPublicKeyList.at(i)) == 0) { //Given address has public key from friend request
                         break;
                     }
                 }
 
                 uint32_t friendNumber;
 
-                if (i != friendRequestPublicKeyList->size()) {
+                if (i != friendRequestPublicKeyList.size()) {
                     friendNumber = tox_friend_add_norequest(tox, uintAddressArray, NULL); //Does not use any further bytes from address than TOX_PUBLIC_KEY_SIZE
                 } else {
                     friendNumber = tox_friend_add(tox, uintAddressArray, (uint8_t *) "Please add me on Tox", 20, NULL);
@@ -454,9 +454,9 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
                 if (friendNumber == UINT32_MAX) {
                     writeToLog("Failed to add friend");
                     return;
-                } else if (i != friendRequestPublicKeyList->size()) {
+                } else if (i != friendRequestPublicKeyList.size()) {
                     //If a pending friend request exists, remove it from the list now
-                    friendRequestPublicKeyList->erase(friendRequestPublicKeyList->begin() + i);
+                    friendRequestPublicKeyList.erase(friendRequestPublicKeyList.begin() + i);
                 }
 
                 writeToLog(string("Added friend ") + addressString + " (friend number: " + to_string(friendNumber) + ")");
@@ -489,8 +489,8 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
             if (tox_friend_delete(tox, friendNumber, error)) {
                 //Delete pending messages for given friend number as it can be reused later
 
-                if (messageQueueMap->count(friendNumber) > 0) {
-                    messageQueueMap->erase(friendNumber);
+                if (messageQueueMap.count(friendNumber) > 0) {
+                    messageQueueMap.erase(friendNumber);
                 }
 
                 writeToLog("Removed friend #" + to_string(friendNumber));
@@ -561,11 +561,11 @@ void Server::sendMessageWithQueue(Tox *tox, uint32_t friendNumber, TOX_MESSAGE_T
     if (*error == TOX_ERR_FRIEND_SEND_MESSAGE_FRIEND_NOT_CONNECTED) {
         //Check if queue exists, if not, create it
 
-        if (messageQueueMap->count(friendNumber) == 0) {
-            (*messageQueueMap)[friendNumber] = new std::queue<string>;
+        if (messageQueueMap.count(friendNumber) == 0) {
+            messageQueueMap[friendNumber] = new std::queue<string>;
         }
 
-        (*messageQueueMap)[friendNumber]->push(string((char *) message, messageLength));
+        messageQueueMap[friendNumber]->push(string((char *) message, messageLength));
 
         writeToLog("Put message in queue");
     }
@@ -584,8 +584,8 @@ void Server::friendConnectionStatusChanged(Tox *tox, uint32_t friendNumber, TOX_
 
     //Try to resend messages
 
-    if (friendConnected && messageQueueMap->count(friendNumber) == 1) {
-        std::queue<string> *queue = (*messageQueueMap)[friendNumber];
+    if (friendConnected && messageQueueMap.count(friendNumber) == 1) {
+        std::queue<string> *queue = messageQueueMap[friendNumber];
 
         while (!queue->empty()) {
             string messageString = queue->front();
@@ -655,19 +655,19 @@ bool Server::sendFriendUpdate(uint32_t friendNumber) { //TODO: Schedule update m
 
     bool friendConnected = (tox_friend_get_connection_status(tox, friendNumber, NULL) != TOX_CONNECTION_NONE);
 
-    size_t friendNameSize = tox_friend_get_name_size(tox, friendNumber, NULL);
+    size_t nameSize = tox_friend_get_name_size(tox, friendNumber, NULL);
 
-    if (friendNameSize == SIZE_MAX) {
+    if (nameSize == SIZE_MAX) {
         writeToLog("Failed to get friend name size");
         return false;
     }
 
-    uint8_t *friendName = new uint8_t[friendNameSize];
-    bool success = tox_friend_get_name(tox, friendNumber, friendName, NULL);
+    uint8_t *name = new uint8_t[nameSize];
+    bool success = tox_friend_get_name(tox, friendNumber, name, NULL);
 
     if (!success) {
         writeToLog("Failed to get friend name");
-        delete[] friendName;
+        delete[] name;
         return false;
     }
 
@@ -675,7 +675,7 @@ bool Server::sendFriendUpdate(uint32_t friendNumber) { //TODO: Schedule update m
 
     if (statusMessageSize == SIZE_MAX) {
         writeToLog("Failed to get status message size");
-        delete[] friendName;
+        delete[] name;
         return false;
     }
 
@@ -684,25 +684,25 @@ bool Server::sendFriendUpdate(uint32_t friendNumber) { //TODO: Schedule update m
 
     if (!success) {
         writeToLog("Failed to get status message");
-        delete[] friendName;
+        delete[] name;
         delete[] statusMessage;
         return false;
     }
 
-    size_t messageLength = 4 * 3 + 1 + numberString.length() + 3 + friendNameSize + 1 + statusMessageSize;
+    size_t messageLength = 4 * 3 + 1 + numberString.length() + 3 + nameSize + 1 + statusMessageSize;
 
     uint8_t *message = new uint8_t[messageLength];
     memcpy(message, intToString(numberString.length(), 4).c_str(), 4);
-    memcpy(message + 4, intToString(friendNameSize, 4).c_str(), 4);
+    memcpy(message + 4, intToString(nameSize, 4).c_str(), 4);
     memcpy(message + 8, intToString(statusMessageSize, 4).c_str(), 4);
     message[12] = ' ';
     memcpy(message + 13, numberString.c_str(), numberString.length());
     message[13 + numberString.length()] = ' ';
     message[13 + numberString.length() + 1] = friendConnected ? '1' : '0';
     message[13 + numberString.length() + 2] = ' ';
-    memcpy(message + 13 + numberString.length() + 3, friendName, friendNameSize);
-    message[13 + numberString.length() + 3 + friendNameSize] = ' ';
-    memcpy(message + 13 + numberString.length() + 3 + friendNameSize + 1, statusMessage, statusMessageSize);
+    memcpy(message + 13 + numberString.length() + 3, name, nameSize);
+    message[13 + numberString.length() + 3 + nameSize] = ' ';
+    memcpy(message + 13 + numberString.length() + 3 + nameSize + 1, statusMessage, statusMessageSize);
 
     TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
     tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageLength, sendError);
@@ -711,12 +711,46 @@ bool Server::sendFriendUpdate(uint32_t friendNumber) { //TODO: Schedule update m
 
     if (success) {
         writeToLog(string("Sent friend update for friend #") + numberString);
+
+        //Save updated information in redirectionServerState
+
+        if (redirectionServerState->friendMap.count(friendNumber) == 0) {
+            redirectionServerState->friendMap[friendNumber] = new ServerState::Friend;
+        }
+
+        ServerState::Friend *savedFriend = redirectionServerState->friendMap[friendNumber];
+
+        //Do not modify the struct if it is already filled with the correct data
+
+        bool equal = false;
+
+        if (savedFriend->name != nullptr && !(equal = (strcmp((char *) savedFriend->name, (char *) name) == 0))) {
+            delete[] savedFriend->name;
+        }
+
+        if (!equal) {
+            savedFriend->name = new uint8_t[nameSize];
+            memcpy(savedFriend->name, name, nameSize);
+        }
+
+        equal = false;
+
+        if (savedFriend->statusMessage != nullptr && !(equal = (strcmp((char *) savedFriend->statusMessage, (char *) statusMessage) == 0))) {
+            delete[] savedFriend->statusMessage;
+        }
+
+        if (!equal) {
+            savedFriend->statusMessage = new uint8_t[statusMessageSize];
+            memcpy(savedFriend->statusMessage, statusMessage, statusMessageSize);
+        }
+
+        savedFriend->connected = friendConnected;
     } else {
         writeToLog(string("Failed to send friend update for friend #") + numberString);
     }
 
     delete sendError;
-    delete[] friendName;
+    delete[] name;
     delete[] statusMessage;
     delete[] message;
 

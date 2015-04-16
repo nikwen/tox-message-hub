@@ -1,7 +1,7 @@
 #ifndef SERVERSTATE_H
 #define SERVERSTATE_H
 
-#include <vector>
+#include <map>
 
 #include "tox/tox.h"
 
@@ -11,13 +11,13 @@ public:
     ServerState();
 
     struct Friend {
-        uint8_t *name;
-        uint8_t *statusMessage;
-        bool connected;
+        uint8_t *name = nullptr;
+        uint8_t *statusMessage = nullptr;
+        bool connected = false;
     };
 
     Friend *selfState = new Friend;
-    std::vector<Friend *> *friendList = new std::vector<Friend *>;
+    std::map<uint32_t, Friend*> friendMap;
 
 };
 

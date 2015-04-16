@@ -23,9 +23,9 @@ private:
     uint32_t redirectionFriendNumber = UINT32_MAX;
     bool writeLogToCout = false;
 
-    std::vector<std::string> *friendRequestPublicKeyList = new std::vector<std::string>;
+    std::vector<std::string> friendRequestPublicKeyList;
 
-    std::map<uint32_t, std::queue<std::string>*> *messageQueueMap = new std::map<uint32_t, std::queue<std::string>*>;
+    std::map<uint32_t, std::queue<std::string>*> messageQueueMap;
     ServerState *redirectionServerState = new ServerState;
 
     std::string byteToHex(const uint8_t *data, uint16_t length);
