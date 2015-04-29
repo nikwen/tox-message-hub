@@ -39,7 +39,7 @@ private:
 
     void selfConnectionStatusChanged(TOX_CONNECTION connectionStatus);
     void friendRequestReceived(const uint8_t *publicKey);
-    void friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, const uint8_t * message, uint16_t messageLength);
+    void friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, const uint8_t * message, size_t messageLength);
     void friendConnectionStatusChanged(Tox *tox, uint32_t friendNumber, TOX_CONNECTION connectionStatus);
     void friendNameChanged(Tox *tox, uint32_t friendNumber, const uint8_t *name, size_t length);
     void friendStatusMessageChanged(Tox *tox, uint32_t friendNumber, const uint8_t *message, size_t length);

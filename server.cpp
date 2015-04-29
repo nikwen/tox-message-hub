@@ -211,7 +211,7 @@ void Server::callbackFriendRequestReceived(Tox *tox, const uint8_t *public_key, 
     static_cast<Server *>(user_data)->friendRequestReceived(public_key);
 }
 
-void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, const uint8_t * message, uint16_t messageLength) { //TODO: Message type
+void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, const uint8_t * message, size_t messageLength) {
     string messageString((char*) message, messageLength);
 
     //Only accept commands from redirection target
@@ -507,38 +507,26 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
         }
     }
 
-    size_t nameLength = tox_friend_get_name_size(tox, friendNumber, NULL);
+    string friendNumberString = to_string(friendNumber);
+    string friendNumberLengthString = to_string(friendNumberString.length());
+    string messageLengthString = to_string(messageLength);
 
-    uint8_t *name = NULL;
-    bool success = false;
+    size_t infoLength = 3 + friendNumberLengthString.length() + 1 + messageLengthString.length() + 1 + friendNumberString.length() + 1;
+    size_t messagePartLength = min(messageLength, TOX_MAX_MESSAGE_LENGTH - infoLength); //TODO: Split very long messages into two parts
+    size_t sendMessageLength = infoLength + messagePartLength;
 
-    if (nameLength != SIZE_MAX) {
-        name = new uint8_t[nameLength];
-        success = tox_friend_get_name(tox, friendNumber, name, NULL);
-
-        if (!success) {
-            writeToLog("Failed to get friend name");
-        }
-    } else {
-        writeToLog("Failed to get friend name size");
-    }
-
-    uint8_t *sendMessage = NULL;
-    int sendMessageLength = nameLength + messageLength + 2;
-    if (nameLength != SIZE_MAX && success && sendMessageLength < TOX_MAX_MESSAGE_LENGTH) {
-        sendMessage = new uint8_t[sendMessageLength];
-        string divider = ": ";
-        memcpy(sendMessage, name, nameLength);
-        memcpy(sendMessage + nameLength, divider.c_str(), 2);
-        memcpy(sendMessage + nameLength + 2, message, messageLength);
-    } else {
-        sendMessage = new uint8_t[messageLength];
-        memcpy(sendMessage, message, messageLength);
-        sendMessageLength = messageLength;
-    }
+    uint8_t *sendMessage = new uint8_t[sendMessageLength];
+    memcpy(sendMessage, "20 ", 3);
+    memcpy(sendMessage + 3, friendNumberLengthString.c_str(), friendNumberLengthString.length());
+    sendMessage[3 + friendNumberLengthString.length()] = ' ';
+    memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1, messageLengthString.c_str(), messageLengthString.length());
+    sendMessage[3 + friendNumberLengthString.length() + 1 + messageLengthString.length()] = ' ';
+    memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1 + messageLengthString.length() + 1, friendNumberString.c_str(), friendNumberString.length());
+    sendMessage[3 + friendNumberLengthString.length() + 1 + messageLengthString.length() + 1 + friendNumberString.length()] = ' ';
+    memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1 + messageLengthString.length() + 1 + friendNumberString.length() + 1, message, messageLength);
 
     TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-    sendMessageWithQueue(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, sendMessageLength, sendError); //TODO: Handle actions properly
+    sendMessageWithQueue(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, sendMessageLength, sendError); //TODO: Handle actions properly (other send id)
 
     if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
         writeToLog(string("Redirected message \"") + string((char *) sendMessage, sendMessageLength) + "\"");
@@ -547,7 +535,6 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
     }
 
     delete sendError;
-    delete[] name;
     delete[] sendMessage;
 }
 
