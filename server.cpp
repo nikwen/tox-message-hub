@@ -16,6 +16,7 @@ using namespace std;
 /*
  * Message prefixes:
  *
+ * 10: Friend status update
  * 20: Redirected normal message
  * 21: Redirected action message
  *
@@ -665,8 +666,6 @@ bool Server::sendFriendUpdate(uint32_t friendNumber, bool onlyChanges) {
         return false;
     }
 
-    string numberString = to_string(friendNumber);
-
     bool friendConnected = (tox_friend_get_connection_status(tox, friendNumber, NULL) != TOX_CONNECTION_NONE);
 
     size_t nameSize = tox_friend_get_name_size(tox, friendNumber, NULL);
@@ -718,28 +717,36 @@ bool Server::sendFriendUpdate(uint32_t friendNumber, bool onlyChanges) {
         }
     }
 
-    size_t messageLength = 4 * 3 + 1 + numberString.length() + 3 + nameSize + 1 + statusMessageSize;
+    string friendNumberString = to_string(friendNumber);
+    string friendNumberLengthString = to_string(friendNumberString.length());
+    string nameLengthString = to_string(nameSize);
+    string statusMessageLengthString = to_string(statusMessageSize);
 
-    uint8_t *message = new uint8_t[messageLength];
-    memcpy(message, intToString(numberString.length(), 4).c_str(), 4);
-    memcpy(message + 4, intToString(nameSize, 4).c_str(), 4);
-    memcpy(message + 8, intToString(statusMessageSize, 4).c_str(), 4);
-    message[12] = ' ';
-    memcpy(message + 13, numberString.c_str(), numberString.length());
-    message[13 + numberString.length()] = ' ';
-    message[13 + numberString.length() + 1] = friendConnected ? '1' : '0';
-    message[13 + numberString.length() + 2] = ' ';
-    memcpy(message + 13 + numberString.length() + 3, name, nameSize);
-    message[13 + numberString.length() + 3 + nameSize] = ' ';
-    memcpy(message + 13 + numberString.length() + 3 + nameSize + 1, statusMessage, statusMessageSize);
+    size_t messageLength = 3 + friendNumberLengthString.length() + 1 + nameLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 3 + nameSize + 1 + statusMessageSize;
+
+    uint8_t *sendMessage = new uint8_t[messageLength];
+    memcpy(sendMessage, "10 ", 3);
+    memcpy(sendMessage + 3, friendNumberLengthString.c_str(), friendNumberLengthString.length());
+    sendMessage[3 + friendNumberLengthString.length()] = ' ';
+    memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1, nameLengthString.c_str(), nameLengthString.length());
+    sendMessage[3 + friendNumberLengthString.length() + 1 + nameLengthString.length()] = ' ';
+    memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1, statusMessageLengthString.c_str(), statusMessageLengthString.length());
+    sendMessage[3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length()] = ' ';
+    memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1, friendNumberString.c_str(), friendNumberString.length());
+    sendMessage[3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length()] = ' ';
+    sendMessage[3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 1] = friendConnected ? '1' : '0';
+    sendMessage[3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 2] = ' ';
+    memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 3, name, nameSize);
+    sendMessage[3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 3 + nameSize] = ' ';
+    memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 3 + nameSize + 1, statusMessage, statusMessageSize);
 
     TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-    tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageLength, sendError);
+    tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, messageLength, sendError);
 
     success = (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK);
 
     if (success) {
-        writeToLog(string("Sent friend update for friend #") + numberString);
+        writeToLog(string("Sent friend update for friend #") + friendNumberString);
 
         //Save updated information in redirectionServerState
 
@@ -781,13 +788,13 @@ bool Server::sendFriendUpdate(uint32_t friendNumber, bool onlyChanges) {
 
         savedFriend->connected = friendConnected;
     } else {
-        writeToLog(string("Failed to send friend update for friend #") + numberString);
+        writeToLog(string("Failed to send friend update for friend #") + friendNumberString);
     }
 
     delete sendError;
     delete[] name;
     delete[] statusMessage;
-    delete[] message;
+    delete[] sendMessage;
 
     return success;
 }
