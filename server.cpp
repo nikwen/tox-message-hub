@@ -13,6 +13,14 @@
 
 using namespace std;
 
+/*
+ * Message prefixes:
+ *
+ * 20: Redirected normal message
+ * 21: Redirected action message
+ *
+ */
+
 Server::Server() {
     //Determine whether to write the log messages to cout
 
@@ -516,7 +524,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
     size_t sendMessageLength = infoLength + messagePartLength;
 
     uint8_t *sendMessage = new uint8_t[sendMessageLength];
-    memcpy(sendMessage, "20 ", 3);
+    memcpy(sendMessage, (type == TOX_MESSAGE_TYPE_NORMAL) ? "20 " : "21 ", 3);
     memcpy(sendMessage + 3, friendNumberLengthString.c_str(), friendNumberLengthString.length());
     sendMessage[3 + friendNumberLengthString.length()] = ' ';
     memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1, messageLengthString.c_str(), messageLengthString.length());
@@ -526,7 +534,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
     memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1 + messageLengthString.length() + 1 + friendNumberString.length() + 1, message, messageLength);
 
     TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-    sendMessageWithQueue(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, sendMessageLength, sendError); //TODO: Handle actions properly (other send id)
+    sendMessageWithQueue(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, sendMessageLength, sendError);
 
     if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
         writeToLog(string("Redirected message \"") + string((char *) sendMessage, sendMessageLength) + "\"");
