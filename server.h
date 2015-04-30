@@ -17,6 +17,13 @@ public:
     void startLoop();
 
 private:
+    enum FriendUpdateMode {
+        SEND_NORMAL,
+        ONLY_CHANGES,
+        FRIENDLIST_ITEM,
+        FRIENDLIST_END
+    };
+
     Tox *tox = nullptr;
     bool connected = false;
     std::string redirectionPubKey;
@@ -33,7 +40,8 @@ private:
     int hexCharToInt(char input);
     std::string intToString(int value, int digits);
 
-    bool sendFriendUpdate(uint32_t friendNumber, bool onlyChanges = false);
+    void sendFriendList();
+    bool sendFriendUpdate(uint32_t friendNumber, FriendUpdateMode mode = SEND_NORMAL);
 
     void sendMessageWithQueue(Tox *tox, uint32_t friendNumber, TOX_MESSAGE_TYPE messageType, uint8_t *message, size_t messageLength, TOX_ERR_FRIEND_SEND_MESSAGE *error);
 

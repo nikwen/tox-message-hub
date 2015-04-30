@@ -19,6 +19,8 @@ using namespace std;
  * 10: Friend status update
  * 20: Redirected normal message
  * 21: Redirected action message
+ * 30: Friend list item (no explicit start item needed)
+ * 31: Friend list end
  *
  */
 
@@ -295,40 +297,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
                 writeToLog("No friend ID entered");
             }
         } else if (body == " friendlist") {
-            TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-            tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "### BEGIN FRIENDLIST ###", 24, sendError);
-
-            if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
-                writeToLog("Failed to send begin friendlist");
-                return;
-            }
-
-            delete sendError;
-
-            size_t friendCount = tox_self_get_friend_list_size(tox);
-
-            uint32_t *friendList = new uint32_t[friendCount];
-            tox_self_get_friend_list(tox, friendList);
-
-            for (int i = 0; i < friendCount; i++) {
-                uint32_t friendNumber = friendList[i];
-
-                if (friendNumber != redirectionFriendNumber) {
-                    sendFriendUpdate(friendNumber);
-                }
-            }
-
-            sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-            tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "### END FRIENDLIST ###", 22, sendError);
-
-            if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
-                writeToLog("Failed to send end friendlist");
-            }
-
-            writeToLog("Sent friend list");
-
-            delete sendError;
-            delete[] friendList;
+            sendFriendList();
             return;
         } else if (body == " pending_fr") {
             TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
@@ -574,7 +543,7 @@ void Server::friendConnectionStatusChanged(Tox *tox, uint32_t friendNumber, TOX_
         //Notify client of connection status changes while he is online
 
         sendFriendUpdate(friendNumber);
-    } else if (friendConnected) {
+    } else if (friendConnected) { //TODO: Friend added/removed messages
         //Update client about what happened in its absence
         //Iterate through all friends and send updates if something has changed
 
@@ -587,7 +556,7 @@ void Server::friendConnectionStatusChanged(Tox *tox, uint32_t friendNumber, TOX_
             uint32_t friendNumber = friendList[i];
 
             if (friendNumber != redirectionFriendNumber) {
-                sendFriendUpdate(friendNumber, true);
+                sendFriendUpdate(friendNumber, ONLY_CHANGES);
             }
         }
 
@@ -654,13 +623,32 @@ void Server::callbackFriendStatusMessage(Tox *tox, uint32_t friend_number, const
     static_cast<Server *>(user_data)->friendStatusMessageChanged(tox, friend_number, message, length);
 }
 
+void Server::sendFriendList() { //TODO: Empty friendlist message
+    size_t friendCount = tox_self_get_friend_list_size(tox);
+
+    uint32_t *friendList = new uint32_t[friendCount];
+    tox_self_get_friend_list(tox, friendList);
+
+    for (int i = 0; i < friendCount; i++) {
+        uint32_t friendNumber = friendList[i];
+
+        if (friendNumber != redirectionFriendNumber) {
+            sendFriendUpdate(friendNumber, (i == friendCount - 1) ? FRIENDLIST_END : FRIENDLIST_ITEM); //TODO: When redirectionFriendNumber is the last in the friend list, the previous one has to be the end message
+        }
+    }
+
+    writeToLog("Sent friend list");
+
+    delete[] friendList;
+}
+
 //TODO: Use name when friend was last seen
-//TODO: Schedule update method which sends all updates when a client comes online at once (by waiting for a short period of time after the first update)
+//TODO: Schedule update method which sends all updates when a client comes online at once (by waiting for a short period of time after the first update) (NOT when friend list or only changes?)
 
 /*
  * Returns true on success
  */
-bool Server::sendFriendUpdate(uint32_t friendNumber, bool onlyChanges) {
+bool Server::sendFriendUpdate(uint32_t friendNumber, FriendUpdateMode mode) {
     if (friendNumber == redirectionFriendNumber) {
         writeToLog("Cannot send update about redirection target");
         return false;
@@ -704,7 +692,7 @@ bool Server::sendFriendUpdate(uint32_t friendNumber, bool onlyChanges) {
 
     //Return in case nothing has changed and only changes have been requested
 
-    if (onlyChanges && redirectionServerState->friendMap.count(friendNumber) > 0) {
+    if (mode == ONLY_CHANGES && redirectionServerState->friendMap.count(friendNumber) > 0) {
         ServerState::Friend *savedFriend = redirectionServerState->friendMap[friendNumber];
 
         if (savedFriend->name != nullptr && savedFriend->nameSize == nameSize && memcmp(savedFriend->name, name, nameSize) == 0 &&
@@ -717,15 +705,32 @@ bool Server::sendFriendUpdate(uint32_t friendNumber, bool onlyChanges) {
         }
     }
 
+    string prefix;
+
+    switch (mode) {
+    case SEND_NORMAL:
+    case ONLY_CHANGES:
+        prefix = "10 ";
+        break;
+    case FRIENDLIST_ITEM:
+        prefix = "30 ";
+        break;
+    case FRIENDLIST_END:
+        prefix = "31 ";
+        break;
+    }
+
     string friendNumberString = to_string(friendNumber);
     string friendNumberLengthString = to_string(friendNumberString.length());
     string nameLengthString = to_string(nameSize);
     string statusMessageLengthString = to_string(statusMessageSize);
 
+    //TODO: Issue when status is empty (statusMessageSize == -1 ?)
+
     size_t messageLength = 3 + friendNumberLengthString.length() + 1 + nameLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 3 + nameSize + 1 + statusMessageSize;
 
     uint8_t *sendMessage = new uint8_t[messageLength];
-    memcpy(sendMessage, "10 ", 3);
+    memcpy(sendMessage, prefix.c_str(), 3);
     memcpy(sendMessage + 3, friendNumberLengthString.c_str(), friendNumberLengthString.length());
     sendMessage[3 + friendNumberLengthString.length()] = ' ';
     memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1, nameLengthString.c_str(), nameLengthString.length());
