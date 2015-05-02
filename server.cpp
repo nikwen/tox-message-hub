@@ -250,7 +250,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
             delete[] uintNameArray;
             return;
         } else if (body.find(" set_status_message ") == 0 && body.length() > 20) {
-            uint16_t uintStatusArrayLength = min((int) (body.length() - 12), TOX_MAX_STATUS_MESSAGE_LENGTH);
+            uint16_t uintStatusArrayLength = min((int) (body.length() - 20), TOX_MAX_STATUS_MESSAGE_LENGTH);
             uint8_t *uintStatusArray = new uint8_t[uintStatusArrayLength];
             memcpy(uintStatusArray, message + 23, uintStatusArrayLength);
 
