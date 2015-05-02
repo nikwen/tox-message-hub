@@ -651,7 +651,7 @@ void Server::sendPendingFriendRequestList() {
     }
 }
 
-void Server::friendStatusChanged (Tox *tox, uint32_t friendNumber, TOX_USER_STATUS status) {
+void Server::friendStatusChanged(Tox *tox, uint32_t friendNumber, TOX_USER_STATUS status) {
     if (friendNumber == redirectionFriendNumber) {
         return;
     }
@@ -659,7 +659,7 @@ void Server::friendStatusChanged (Tox *tox, uint32_t friendNumber, TOX_USER_STAT
     sendFriendUpdate(friendNumber);
 }
 
-void Server::callbackFriendStatus (Tox *tox,  uint32_t friend_number, TOX_USER_STATUS status, void *user_data) {
+void Server::callbackFriendStatus(Tox *tox, uint32_t friend_number, TOX_USER_STATUS status, void *user_data) {
     static_cast<Server *>(user_data)->friendStatusChanged(tox, friend_number, status);
 }
 
@@ -697,7 +697,7 @@ void Server::sendFriendList() {
 
         delete sendError;
     }
- }
+}
 
 //TODO: Use name when friend was last seen
 //TODO: Schedule update method which sends all updates when a client comes online at once (by waiting for a short period of time after the first update) (NOT when friend list or only changes?)
