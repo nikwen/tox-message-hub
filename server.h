@@ -52,7 +52,7 @@ private:
     void friendConnectionStatusChanged(Tox *tox, uint32_t friendNumber, TOX_CONNECTION connectionStatus);
     void friendNameChanged(Tox *tox, uint32_t friendNumber, const uint8_t *name, size_t length);
     void friendStatusMessageChanged(Tox *tox, uint32_t friendNumber, const uint8_t *message, size_t length);
-    void friendStatusChanged (Tox *tox,uint32_t friendNumber, TOX_USER_STATUS status);
+    void friendStatusChanged(Tox *tox, uint32_t friendNumber, TOX_USER_STATUS status);
 
     static void callbackSelfConnectionStatus(Tox *tox, TOX_CONNECTION connection_status, void *user_data);
     static void callbackFriendRequestReceived(Tox *tox, const uint8_t *public_key, const uint8_t *message, size_t length, void *user_data);
@@ -60,7 +60,7 @@ private:
     static void callbackFriendConnectionStatus(Tox *tox, uint32_t friend_number, TOX_CONNECTION connection_status, void *user_data);
     static void callbackFriendName(Tox *tox, uint32_t friend_number, const uint8_t *name, size_t length, void *user_data);
     static void callbackFriendStatusMessage(Tox *tox, uint32_t friend_number, const uint8_t *message, size_t length, void *user_data);
-    static void callbackFriendStatus (Tox *tox,  uint32_t friend_number, TOX_USER_STATUS status, void *user_data);
+    static void callbackFriendStatus(Tox *tox, uint32_t friend_number, TOX_USER_STATUS status, void *user_data);
 
     void writeToLog(const std::string &text);
 
