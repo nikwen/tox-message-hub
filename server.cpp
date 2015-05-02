@@ -115,6 +115,7 @@ Server::Server() {
     tox_callback_friend_connection_status(tox, callbackFriendConnectionStatus, this);
     tox_callback_friend_name(tox, callbackFriendName, this);
     tox_callback_friend_status_message(tox, callbackFriendStatusMessage, this);
+    tox_callback_friend_status(tox, callbackFriendStatus, this);
 
     saveTox();
 }
@@ -248,21 +249,39 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
 
             delete[] uintNameArray;
             return;
-        } else if (body.find(" set_status ") == 0 && body.length() > 12) {
+        } else if (body.find(" set_status_message ") == 0 && body.length() > 20) {
             uint16_t uintStatusArrayLength = min((int) (body.length() - 12), TOX_MAX_STATUS_MESSAGE_LENGTH);
             uint8_t *uintStatusArray = new uint8_t[uintStatusArrayLength];
-            memcpy(uintStatusArray, message + 15, uintStatusArrayLength);
+            memcpy(uintStatusArray, message + 23, uintStatusArrayLength);
 
-            string status = body.substr(12, uintStatusArrayLength);
+            string status = body.substr(20, uintStatusArrayLength);
 
             if (tox_self_set_status_message(tox, uintStatusArray, uintStatusArrayLength, NULL)) {
-                writeToLog("Changed status to " + status);
+                writeToLog("Changed messsage status to " + status);
                 saveTox();
             } else {
-                writeToLog("Changing status to " + status + " failed");
+                writeToLog("Changing message status to " + status + " failed");
             }
 
             delete[] uintStatusArray;
+            return;
+        } else if (body.find(" set_status ")== 0 && body.length() > 12) {
+            string text = body.substr(12);
+            if (text == "busy"){
+                tox_self_set_status(tox, TOX_USER_STATUS_BUSY);
+                writeToLog("Changed status to busy");
+                saveTox();
+            } else if (text == "away"){
+                tox_self_set_status(tox, TOX_USER_STATUS_AWAY);
+                writeToLog("Changed status to away");
+                saveTox();
+            } else if (text == "online"){
+                tox_self_set_status(tox, TOX_USER_STATUS_NONE);
+                writeToLog("Changed status to online");
+                saveTox();
+            } else {
+               writeToLog ("Changing status command couldn't be interpreted.");
+            }
             return;
         } else if (body.find(" message ") == 0 && body.length() > 9) {
             string text = body.substr(9);
@@ -595,6 +614,7 @@ void Server::callbackFriendStatusMessage(Tox *tox, uint32_t friend_number, const
     static_cast<Server *>(user_data)->friendStatusMessageChanged(tox, friend_number, message, length);
 }
 
+<<<<<<< HEAD
 void Server::sendPendingFriendRequestList() {
     if (friendRequestPublicKeyList.size() > 0) {
         for (int i = 0; i < friendRequestPublicKeyList.size(); i++) {
@@ -632,7 +652,19 @@ void Server::sendPendingFriendRequestList() {
 
         delete sendError;
     }
-}
+ }
+
+void Server::friendStatusChanged (Tox *tox, uint32_t friendNumber, TOX_USER_STATUS status){
+    if (friendNumber == redirectionFriendNumber) {
+        return;
+    }
+    writeToLog("friendUpdate because of changed status");
+    sendFriendUpdate(friendNumber);
+ }
+
+void Server::callbackFriendStatus (Tox *tox,  uint32_t friend_number, TOX_USER_STATUS status, void *user_data){
+    static_cast<Server *>(user_data)->friendStatusChanged(tox, friend_number, status);
+ }
 
 void Server::sendFriendList() {
     size_t friendCount = tox_self_get_friend_list_size(tox);
@@ -668,7 +700,7 @@ void Server::sendFriendList() {
 
         delete sendError;
     }
-}
+ }
 
 //TODO: Use name when friend was last seen
 //TODO: Schedule update method which sends all updates when a client comes online at once (by waiting for a short period of time after the first update) (NOT when friend list or only changes?)
