@@ -22,6 +22,9 @@ using namespace std;
  * 30: Friend list item (no explicit start item needed)
  * 31: Friend list end
  * 32: Empty friend list
+ * 33: Friend request list item
+ * 34: Friend request list end
+ * 35: Empty friend request list
  *
  */
 
@@ -301,39 +304,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
             sendFriendList();
             return;
         } else if (body == " pending_fr") {
-            TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-            tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "### BEGIN FRIEND_REQUESTS ###", 29, sendError);
-
-            if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
-                writeToLog("Failed to send begin friend requests");
-                return;
-            }
-
-            delete sendError;
-
-            for (int i = 0; i < friendRequestPublicKeyList.size(); i++) {
-                string publicKey = friendRequestPublicKeyList.at(i);
-
-                TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-                tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) publicKey.c_str(), TOX_PUBLIC_KEY_SIZE * 2, sendError);
-
-                if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
-                    writeToLog("Failed to send public key " + publicKey);
-                }
-
-                delete sendError;
-            }
-
-            sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-            tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "### END FRIEND_REQUESTS ###", 27, sendError);
-
-            if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
-                writeToLog("Failed to send end friend requests");
-            }
-
-            writeToLog("Sent friend request list");
-
-            delete sendError;
+            sendPendingFriendRequestList();
             return;
         } else if (body.find(" accept_fr ") == 0 && body.length() > 11) {
             if (body.length() == 11 + TOX_PUBLIC_KEY_SIZE * 2) {
@@ -622,6 +593,45 @@ void Server::friendStatusMessageChanged(Tox *tox, uint32_t friendNumber, const u
 
 void Server::callbackFriendStatusMessage(Tox *tox, uint32_t friend_number, const uint8_t *message, size_t length, void *user_data) {
     static_cast<Server *>(user_data)->friendStatusMessageChanged(tox, friend_number, message, length);
+}
+
+void Server::sendPendingFriendRequestList() {
+    if (friendRequestPublicKeyList.size() > 0) {
+        for (int i = 0; i < friendRequestPublicKeyList.size(); i++) {
+            string publicKey = friendRequestPublicKeyList.at(i);
+
+            size_t sendMessageLength = 3 + TOX_PUBLIC_KEY_SIZE * 2;
+
+            uint8_t *sendMessage = new uint8_t[sendMessageLength];
+            memcpy(sendMessage, (i == friendRequestPublicKeyList.size() - 1) ? "34 " : "33 ", 3);
+            memcpy(sendMessage + 3, publicKey.c_str(), TOX_PUBLIC_KEY_SIZE * 2);
+
+            TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+            tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, sendMessageLength, sendError);
+
+            if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+                writeToLog("Failed to send friend request with public key " + publicKey);
+            }
+
+            delete sendError;
+            delete[] sendMessage;
+        }
+
+        writeToLog("Sent friend request list");
+    } else {
+        TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+        tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "35", 2, sendError);
+
+        bool success = (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK);
+
+        if (success) {
+            writeToLog("Sent empty friend request list message");
+        } else {
+            writeToLog("Failed to send empty friend request list message");
+        }
+
+        delete sendError;
+    }
 }
 
 void Server::sendFriendList() {

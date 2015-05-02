@@ -40,6 +40,7 @@ private:
     int hexCharToInt(char input);
     std::string intToString(int value, int digits);
 
+    void sendPendingFriendRequestList();
     void sendFriendList();
     bool sendFriendUpdate(uint32_t friendNumber, FriendUpdateMode mode = SEND_NORMAL);
 
