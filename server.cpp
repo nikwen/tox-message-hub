@@ -21,6 +21,7 @@ using namespace std;
  * 21: Redirected action message
  * 30: Friend list item (no explicit start item needed)
  * 31: Friend list end
+ * 32: Empty friend list
  *
  */
 
@@ -623,23 +624,40 @@ void Server::callbackFriendStatusMessage(Tox *tox, uint32_t friend_number, const
     static_cast<Server *>(user_data)->friendStatusMessageChanged(tox, friend_number, message, length);
 }
 
-void Server::sendFriendList() { //TODO: Empty friendlist message
+void Server::sendFriendList() {
     size_t friendCount = tox_self_get_friend_list_size(tox);
 
-    uint32_t *friendList = new uint32_t[friendCount];
-    tox_self_get_friend_list(tox, friendList);
+    if (friendCount > 1) { //When friendCount == 1, the only friend which exists is the client
+        uint32_t *friendList = new uint32_t[friendCount];
+        tox_self_get_friend_list(tox, friendList);
 
-    for (int i = 0; i < friendCount; i++) {
-        uint32_t friendNumber = friendList[i];
+        bool redirectionIsLast = (friendList[friendCount - 1] == redirectionFriendNumber);
 
-        if (friendNumber != redirectionFriendNumber) {
-            sendFriendUpdate(friendNumber, (i == friendCount - 1) ? FRIENDLIST_END : FRIENDLIST_ITEM); //TODO: When redirectionFriendNumber is the last in the friend list, the previous one has to be the end message
+        for (int i = 0; i < friendCount; i++) {
+            uint32_t friendNumber = friendList[i];
+
+            if (friendNumber != redirectionFriendNumber) {
+                sendFriendUpdate(friendNumber, (i == friendCount - 1 || (redirectionIsLast && i == friendCount - 2)) ? FRIENDLIST_END : FRIENDLIST_ITEM);
+            }
         }
+
+        writeToLog("Sent friend list");
+
+        delete[] friendList;
+    } else {
+        TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
+        tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "32", 2, sendError);
+
+        bool success = (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK);
+
+        if (success) {
+            writeToLog("Sent empty friend list message");
+        } else {
+            writeToLog("Failed to send empty friend list message");
+        }
+
+        delete sendError;
     }
-
-    writeToLog("Sent friend list");
-
-    delete[] friendList;
 }
 
 //TODO: Use name when friend was last seen
