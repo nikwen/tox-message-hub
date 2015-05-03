@@ -51,17 +51,15 @@ Server::Server() {
         uint8_t * data = new uint8_t[loadFileSize];
 
         if (loadTox(data, loadFileSize)) {
-            TOX_ERR_NEW *loadingError = new TOX_ERR_NEW;
+            TOX_ERR_NEW loadingError;
 
-            tox = tox_new(toxOptions, data, loadFileSize, loadingError);
+            tox = tox_new(toxOptions, data, loadFileSize, &loadingError);
 
-            if (*loadingError != TOX_ERR_NEW_OK) {
+            if (loadingError != TOX_ERR_NEW_OK) {
                 writeToLog("Saved tox id exists but loading failed");
                 writeToLog("Aborting");
                 return;
             }
-
-            delete loadingError;
         } else {
             writeToLog("Loading saved tox id failed");
             writeToLog("Aborting");
@@ -70,11 +68,11 @@ Server::Server() {
 
         delete [] data;
     } else {
-        TOX_ERR_NEW *loadingError = new TOX_ERR_NEW;
+        TOX_ERR_NEW loadingError;
 
-        tox = tox_new(toxOptions, NULL, 0, loadingError);
+        tox = tox_new(toxOptions, NULL, 0, &loadingError);
 
-        if (*loadingError != TOX_ERR_NEW_OK) {
+        if (loadingError != TOX_ERR_NEW_OK) {
             writeToLog("Failed to create new tox instance");
             writeToLog("Aborting");
             return;
@@ -84,8 +82,6 @@ Server::Server() {
 
         tox_self_set_name(tox, (uint8_t *) "Tox bot", 7, NULL);
         tox_self_set_status_message(tox, (uint8_t *) "Replying to your messages", 25, NULL);
-
-        delete loadingError;
     }
 
     loadConfig();
@@ -101,7 +97,7 @@ Server::Server() {
 
     //Bootstrap
 
-    int bootstrapResult = tox_bootstrap(tox, "192.254.75.102", 33445, new uint8_t[32] {
+    int bootstrapResult = tox_bootstrap(tox, "192.254.75.102", 33445, new uint8_t[32] { //TODO: More bootstrap nodes
                                    0x95, 0x1C, 0x88, 0xB7, 0xE7, 0x5C, 0x86, 0x74, 0x18, 0xAC, 0xDB, 0x5D, 0x27, 0x38, 0x21, 0x37,
                                    0x2B, 0xB5, 0xBD, 0x65, 0x27, 0x40, 0xBC, 0xDF, 0x62, 0x3A, 0x4F, 0xA2, 0x93, 0xE7, 0x5D, 0x2F
                                    }, NULL);
@@ -134,7 +130,7 @@ string Server::byteToHex(const uint8_t *data, uint16_t length) {
     char hexString[length * 2];
     static const char hexChars[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
-    for(int j = 0; j < length; j++){
+    for (int j = 0; j < length; j++) {
         hexString[j*2] = hexChars[((data[j] >> 4) & 0xF)];
         hexString[(j*2) + 1] = hexChars[(data[j]) & 0x0F];
     }
@@ -210,16 +206,15 @@ void Server::friendRequestReceived(const uint8_t *publicKey) {
         memcpy(message, "36 ", 3);
         memcpy(message + 3, publicKeyString.c_str(), TOX_PUBLIC_KEY_SIZE * 2);
 
-        TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-        sendMessageWithQueue(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageLength, sendError);
+        TOX_ERR_FRIEND_SEND_MESSAGE sendError;
+        sendMessageWithQueue(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageLength, &sendError);
 
-        if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+        if (sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
             writeToLog("Sent update: Pending friend request from " + publicKeyString);
         } else {
             writeToLog("Sending update failed: Pending friend request from " + publicKeyString);
         }
 
-        delete sendError;
         delete[] message;
     }
 }
@@ -278,7 +273,7 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
                 tox_self_set_status(tox, TOX_USER_STATUS_NONE);
                 writeToLog("Changed status to online");
             } else {
-                writeToLog ("Changing status command couldn't be interpreted.");
+                writeToLog("Given status is invalid");
             }
             saveTox();
             return;
@@ -292,21 +287,20 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
                     int sendMessageLength = text.length() - noNumberPos - 1;
                     if (sendMessageLength > 0) {
                         uint16_t uintSendMessageArrayLength = min(sendMessageLength, TOX_MAX_MESSAGE_LENGTH);
-                        uint8_t *uintSendMessageArray = new uint8_t[uintSendMessageArrayLength];
+                        uint8_t *uintSendMessageArray = new uint8_t[uintSendMessageArrayLength]; //TODO: Remove new from arrays everywhere!!!
                         memcpy(uintSendMessageArray, message + noNumberPos + 13, uintSendMessageArrayLength);
 
                         string sendMessage = body.substr(noNumberPos + 10, uintSendMessageArrayLength);
 
-                        TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-                        sendMessageWithQueue(tox, friendId, TOX_MESSAGE_TYPE_NORMAL, uintSendMessageArray, uintSendMessageArrayLength, sendError);
+                        TOX_ERR_FRIEND_SEND_MESSAGE sendError;
+                        sendMessageWithQueue(tox, friendId, TOX_MESSAGE_TYPE_NORMAL, uintSendMessageArray, uintSendMessageArrayLength, &sendError);
 
-                        if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+                        if (sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
                             writeToLog("Sent message \"" + sendMessage + "\"");
                         } else {
                             writeToLog("Sending message \"" + sendMessage + "\" failed");
                         }
 
-                        delete sendError;
                         delete[] uintSendMessageArray;
                         return;
                     } else {
@@ -452,9 +446,9 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
                 return;
             }
 
-            TOX_ERR_FRIEND_DELETE *error = new TOX_ERR_FRIEND_DELETE;
+            TOX_ERR_FRIEND_DELETE error;
 
-            if (tox_friend_delete(tox, friendNumber, error)) {
+            if (tox_friend_delete(tox, friendNumber, &error)) {
                 //Delete pending messages for given friend number as it can be reused later
 
                 if (messageQueueMap.count(friendNumber) > 0) {
@@ -462,13 +456,12 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
                 }
 
                 writeToLog("Removed friend #" + to_string(friendNumber));
-            } else if (*error = TOX_ERR_FRIEND_DELETE_FRIEND_NOT_FOUND) {
+            } else if (error = TOX_ERR_FRIEND_DELETE_FRIEND_NOT_FOUND) {
                 writeToLog("Could not find friend for given friend number: " + to_string(friendNumber));
             } else {
                 writeToLog("Failed to delete friend #" + to_string(friendNumber));
             }
 
-            delete error;
             return;
         } else {
             writeToLog("Could not interpret command");
@@ -493,16 +486,15 @@ void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, 
     sendMessage[3 + friendNumberLengthString.length() + 1 + messageLengthString.length() + 1 + friendNumberString.length()] = ' ';
     memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1 + messageLengthString.length() + 1 + friendNumberString.length() + 1, message, messageLength);
 
-    TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-    sendMessageWithQueue(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, sendMessageLength, sendError);
+    TOX_ERR_FRIEND_SEND_MESSAGE sendError;
+    sendMessageWithQueue(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, sendMessageLength, &sendError);
 
-    if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+    if (sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
         writeToLog(string("Redirected message \"") + string((char *) sendMessage, sendMessageLength) + "\"");
     } else {
         writeToLog(string("Redirecting message \"") + string((char *) sendMessage, sendMessageLength) + "\" failed");
     }
 
-    delete sendError;
     delete[] sendMessage;
 }
 
@@ -564,22 +556,20 @@ void Server::friendConnectionStatusChanged(Tox *tox, uint32_t friendNumber, TOX_
             uint8_t *message = new uint8_t[messageString.length()];
             memcpy(message, messageString.c_str(), messageString.length());
 
-            TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-            tox_friend_send_message(tox, friendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageString.length(), sendError);
+            TOX_ERR_FRIEND_SEND_MESSAGE sendError;
+            tox_friend_send_message(tox, friendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageString.length(), &sendError);
 
-            if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+            if (sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
                 writeToLog(string("Resent message \"") + string((char *) message, messageString.length()) + "\"");
                 queue->pop();
-            } else if (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_FRIEND_NOT_CONNECTED) {
+            } else if (sendError == TOX_ERR_FRIEND_SEND_MESSAGE_FRIEND_NOT_CONNECTED) {
                 writeToLog(string("Resending message \"") + string((char *) message, messageString.length()) + "\" failed (friend offline again, will try again later)");
-                delete sendError;
                 delete[] message;
                 break;
             } else {
                 writeToLog(string("Resending message \"") + string((char *) message, messageString.length()) + "\" failed");
             }
 
-            delete sendError;
             delete[] message;
         }
     }
@@ -624,31 +614,28 @@ void Server::sendPendingFriendRequestList() {
             memcpy(sendMessage, (i == friendRequestPublicKeyList.size() - 1) ? "34 " : "33 ", 3);
             memcpy(sendMessage + 3, publicKey.c_str(), TOX_PUBLIC_KEY_SIZE * 2);
 
-            TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-            tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, sendMessageLength, sendError);
+            TOX_ERR_FRIEND_SEND_MESSAGE sendError;
+            tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, sendMessageLength, &sendError);
 
-            if (*sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+            if (sendError != TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
                 writeToLog("Failed to send friend request with public key " + publicKey);
             }
 
-            delete sendError;
             delete[] sendMessage;
         }
 
         writeToLog("Sent friend request list");
     } else {
-        TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-        tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "35", 2, sendError);
+        TOX_ERR_FRIEND_SEND_MESSAGE sendError;
+        tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "35", 2, &sendError);
 
-        bool success = (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK);
+        bool success = (sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK);
 
         if (success) {
             writeToLog("Sent empty friend request list message");
         } else {
             writeToLog("Failed to send empty friend request list message");
         }
-
-        delete sendError;
     }
 }
 
@@ -685,18 +672,16 @@ void Server::sendFriendList() {
 
         delete[] friendList;
     } else {
-        TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-        tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "32", 2, sendError);
+        TOX_ERR_FRIEND_SEND_MESSAGE sendError;
+        tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, (uint8_t *) "32", 2, &sendError);
 
-        bool success = (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK);
+        bool success = (sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK);
 
         if (success) {
             writeToLog("Sent empty friend list message");
         } else {
             writeToLog("Failed to send empty friend list message");
         }
-
-        delete sendError;
     }
 }
 
@@ -713,33 +698,24 @@ bool Server::sendFriendUpdate(uint32_t friendNumber, FriendUpdateMode mode) {
         return false;
     }
 
-    TOX_ERR_FRIEND_QUERY *friendQueryError = new TOX_ERR_FRIEND_QUERY;
+    TOX_ERR_FRIEND_QUERY friendQueryError;
 
-    bool friendConnected = (tox_friend_get_connection_status(tox, friendNumber, friendQueryError) != TOX_CONNECTION_NONE);
+    bool friendConnected = (tox_friend_get_connection_status(tox, friendNumber, &friendQueryError) != TOX_CONNECTION_NONE);
 
-    if (*friendQueryError == TOX_ERR_FRIEND_QUERY_FRIEND_NOT_FOUND) {
+    if (friendQueryError == TOX_ERR_FRIEND_QUERY_FRIEND_NOT_FOUND) {
         writeToLog("Failed to get friend connection status: friend not found");
-        delete friendQueryError;
         return false;
-    } else if (*friendQueryError != TOX_ERR_FRIEND_QUERY_OK) {
+    } else if (friendQueryError != TOX_ERR_FRIEND_QUERY_OK) {
         writeToLog("Failed to get friend connection status");
-        delete friendQueryError;
         return false;
     }
 
-    delete friendQueryError;
+    TOX_USER_STATUS friendStatus = tox_friend_get_status(tox, friendNumber, &friendQueryError);
 
-    friendQueryError = new TOX_ERR_FRIEND_QUERY; //TODO: Applies to the whole code: Is reallocation needed here? Do we need to use new and a pointer at all?
-
-    TOX_USER_STATUS friendStatus = tox_friend_get_status(tox, friendNumber, friendQueryError);
-
-    if (*friendQueryError != TOX_ERR_FRIEND_QUERY_OK) {
+    if (friendQueryError != TOX_ERR_FRIEND_QUERY_OK) {
         writeToLog("Failed to get friend status");
-        delete friendQueryError;
         return false;
     }
-
-    delete friendQueryError;
 
     size_t nameSize = tox_friend_get_name_size(tox, friendNumber, NULL);
 
@@ -847,10 +823,10 @@ bool Server::sendFriendUpdate(uint32_t friendNumber, FriendUpdateMode mode) {
     sendMessage[3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 3 + nameSize] = ' ';
     memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 3 + nameSize + 1, statusMessage, statusMessageSize);
 
-    TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
-    tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, messageLength, sendError);
+    TOX_ERR_FRIEND_SEND_MESSAGE sendError;
+    tox_friend_send_message(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, sendMessage, messageLength, &sendError);
 
-    success = (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK);
+    success = (sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK);
 
     if (success) { //TODO: Save status
         writeToLog(string("Sent friend update for friend #") + friendNumberString);
@@ -898,7 +874,6 @@ bool Server::sendFriendUpdate(uint32_t friendNumber, FriendUpdateMode mode) {
         writeToLog(string("Failed to send friend update for friend #") + friendNumberString);
     }
 
-    delete sendError;
     delete[] name;
     delete[] statusMessage;
     delete[] sendMessage;
