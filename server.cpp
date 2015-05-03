@@ -656,7 +656,7 @@ void Server::friendStatusChanged(Tox *tox, uint32_t friendNumber, TOX_USER_STATU
     if (friendNumber == redirectionFriendNumber) {
         return;
     }
-    writeToLog("friendUpdate because of changed status");
+
     sendFriendUpdate(friendNumber);
 }
 
@@ -702,6 +702,7 @@ void Server::sendFriendList() {
 
 //TODO: Use name when friend was last seen
 //TODO: Schedule update method which sends all updates when a client comes online at once (by waiting for a short period of time after the first update) (NOT when friend list or only changes?)
+//TODO: Updates do not always reflect the current state!!! (Especially when changing the status) → Report bug in toxcore
 
 /*
  * Returns true on success
@@ -712,11 +713,37 @@ bool Server::sendFriendUpdate(uint32_t friendNumber, FriendUpdateMode mode) {
         return false;
     }
 
-    bool friendConnected = (tox_friend_get_connection_status(tox, friendNumber, NULL) != TOX_CONNECTION_NONE);
+    TOX_ERR_FRIEND_QUERY *friendQueryError = new TOX_ERR_FRIEND_QUERY;
+
+    bool friendConnected = (tox_friend_get_connection_status(tox, friendNumber, friendQueryError) != TOX_CONNECTION_NONE);
+
+    if (*friendQueryError == TOX_ERR_FRIEND_QUERY_FRIEND_NOT_FOUND) {
+        writeToLog("Failed to get friend connection status: friend not found");
+        delete friendQueryError;
+        return false;
+    } else if (*friendQueryError != TOX_ERR_FRIEND_QUERY_OK) {
+        writeToLog("Failed to get friend connection status");
+        delete friendQueryError;
+        return false;
+    }
+
+    delete friendQueryError;
+
+    friendQueryError = new TOX_ERR_FRIEND_QUERY; //TODO: Applies to the whole code: Is reallocation needed here? Do we need to use new and a pointer at all?
+
+    TOX_USER_STATUS friendStatus = tox_friend_get_status(tox, friendNumber, friendQueryError);
+
+    if (*friendQueryError != TOX_ERR_FRIEND_QUERY_OK) {
+        writeToLog("Failed to get friend status");
+        delete friendQueryError;
+        return false;
+    }
+
+    delete friendQueryError;
 
     size_t nameSize = tox_friend_get_name_size(tox, friendNumber, NULL);
 
-    if (nameSize == SIZE_MAX) {
+    if (nameSize == SIZE_MAX) { //TODO: These comparisons aren't supported anymore, change them everywhere!!!
         writeToLog("Failed to get friend name size");
         return false;
     }
@@ -750,7 +777,7 @@ bool Server::sendFriendUpdate(uint32_t friendNumber, FriendUpdateMode mode) {
 
     //Return in case nothing has changed and only changes have been requested
 
-    if (mode == ONLY_CHANGES && redirectionServerState->friendMap.count(friendNumber) > 0) {
+    if (mode == ONLY_CHANGES && redirectionServerState->friendMap.count(friendNumber) > 0) { //TODO: Compare status
         ServerState::Friend *savedFriend = redirectionServerState->friendMap[friendNumber];
 
         if (savedFriend->name != nullptr && savedFriend->nameSize == nameSize && memcmp(savedFriend->name, name, nameSize) == 0 &&
@@ -778,12 +805,29 @@ bool Server::sendFriendUpdate(uint32_t friendNumber, FriendUpdateMode mode) {
         break;
     }
 
+    uint8_t statusChar;
+
+    if (!friendConnected) {
+        statusChar = '0';
+    } else {
+        switch (friendStatus) {
+        case TOX_USER_STATUS_AWAY:
+            statusChar = '2';
+            break;
+        case TOX_USER_STATUS_BUSY:
+            statusChar = '3';
+            break;
+        default:
+            statusChar = '1';
+        }
+    }
+
     string friendNumberString = to_string(friendNumber);
     string friendNumberLengthString = to_string(friendNumberString.length());
     string nameLengthString = to_string(nameSize);
     string statusMessageLengthString = to_string(statusMessageSize);
 
-    //TODO: Issue when status is empty (statusMessageSize == -1 ?)
+    //TODO: Issue when status message is empty (statusMessageSize == -1 ?)
 
     size_t messageLength = 3 + friendNumberLengthString.length() + 1 + nameLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 3 + nameSize + 1 + statusMessageSize;
 
@@ -797,7 +841,7 @@ bool Server::sendFriendUpdate(uint32_t friendNumber, FriendUpdateMode mode) {
     sendMessage[3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length()] = ' ';
     memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1, friendNumberString.c_str(), friendNumberString.length());
     sendMessage[3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length()] = ' ';
-    sendMessage[3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 1] = friendConnected ? '1' : '0';
+    sendMessage[3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 1] = statusChar;
     sendMessage[3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 2] = ' ';
     memcpy(sendMessage + 3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 3, name, nameSize);
     sendMessage[3 + friendNumberLengthString.length() + 1 + statusMessageLengthString.length() + 1 + statusMessageLengthString.length() + 1 + friendNumberString.length() + 3 + nameSize] = ' ';
@@ -808,7 +852,7 @@ bool Server::sendFriendUpdate(uint32_t friendNumber, FriendUpdateMode mode) {
 
     success = (*sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK);
 
-    if (success) {
+    if (success) { //TODO: Save status
         writeToLog(string("Sent friend update for friend #") + friendNumberString);
 
         //Save updated information in redirectionServerState
