@@ -25,6 +25,7 @@ using namespace std;
  * 33: Friend request list item
  * 34: Friend request list end
  * 35: Empty friend request list
+ * 36: Friend request received
  *
  */
 
@@ -203,11 +204,11 @@ void Server::friendRequestReceived(const uint8_t *publicKey) {
 
         friendRequestPublicKeyList.push_back(publicKeyString);
 
-        size_t messageLength = 28 + TOX_PUBLIC_KEY_SIZE * 2;
+        size_t messageLength = 3 + TOX_PUBLIC_KEY_SIZE * 2;
 
         uint8_t *message = new uint8_t[messageLength];
-        memcpy(message, "Pending friend request from ", 28);
-        memcpy(message + 28, publicKeyString.c_str(), TOX_PUBLIC_KEY_SIZE * 2);
+        memcpy(message, "36 ", 3);
+        memcpy(message + 3, publicKeyString.c_str(), TOX_PUBLIC_KEY_SIZE * 2);
 
         TOX_ERR_FRIEND_SEND_MESSAGE *sendError = new TOX_ERR_FRIEND_SEND_MESSAGE;
         sendMessageWithQueue(tox, redirectionFriendNumber, TOX_MESSAGE_TYPE_NORMAL, message, messageLength, sendError);
