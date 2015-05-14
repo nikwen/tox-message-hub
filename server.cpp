@@ -14,7 +14,7 @@
 using namespace std;
 
 /*
- * Message prefixes:
+ * Message prefixes in server replies:
  *
  * 10: Friend status update
  * 20: Redirected normal message
@@ -26,6 +26,10 @@ using namespace std;
  * 34: Friend request list end
  * 35: Empty friend request list
  * 36: Friend request received
+ *
+ * Message prefixes in client requests:
+ *
+ * 10: Set name
  *
  */
 
@@ -223,241 +227,256 @@ void Server::callbackFriendRequestReceived(Tox *tox, const uint8_t *public_key, 
 void Server::friendMessageReceived(int32_t friendNumber, TOX_MESSAGE_TYPE type, const uint8_t * message, size_t messageLength) {
     string messageString((char*) message, messageLength);
 
-    //Only accept commands from redirection target
-    if (friendNumber == redirectionFriendNumber && type == TOX_MESSAGE_TYPE_NORMAL && messageString.substr(0, 3) == string("###")) {
-        string body = messageString.substr(3);
-        if (body.find(" set_name ") == 0 && body.length() > 10) {
-            uint16_t uintNameArrayLength = min((int) (body.length() - 10), TOX_MAX_NAME_LENGTH);
-            uint8_t uintNameArray[uintNameArrayLength];
-            memcpy(uintNameArray, message + 13, uintNameArrayLength);
+    if (friendNumber == redirectionFriendNumber && type == TOX_MESSAGE_TYPE_NORMAL) {
+        //Parse command prefixes
 
-            string name = body.substr(10, uintNameArrayLength);
+        if (messageString.length() < 2) { //TODO: Error message via tox_friend_send_message()
+            writeToLog("No message prefix");
+            return;
+        }
 
-            if (tox_self_set_name(tox, uintNameArray, uintNameArrayLength, NULL)) {
-                writeToLog("Changed name to " + name);
+        string prefixString = messageString.substr(0, 2);
+        string argumentsString = (messageString.length() >= 4) ? messageString.substr(3) : "";
+
+        if (prefixString == "10") {
+            if (argumentsString.length() >= 1) {
+                uint16_t nameLength = min((int) argumentsString.length(), TOX_MAX_NAME_LENGTH);
+                uint8_t name[nameLength];
+                memcpy(name, argumentsString.c_str(), nameLength);
+
+                if (tox_self_set_name(tox, name, nameLength, NULL)) {
+                    writeToLog("Changed name to " + argumentsString); //TODO: Message on success (Structure "99 10 1" on success or "99 10 0 Error message" on failure???)
+                    saveTox();
+                } else {
+                    writeToLog("Failed to change name to " + argumentsString); //TODO: Error message via tox_friend_send_message()
+                }
+            } else {
+                writeToLog("No name given"); //TODO: Error message via tox_friend_send_message()
+            }
+        }
+
+        if (messageString.substr(0, 3) == string("###")) {
+            string body = messageString.substr(3);
+            if (body.find(" set_status_message ") == 0 && body.length() > 20) {
+                uint16_t uintStatusArrayLength = min((int) (body.length() - 20), TOX_MAX_STATUS_MESSAGE_LENGTH);
+                uint8_t uintStatusArray[uintStatusArrayLength];
+                memcpy(uintStatusArray, message + 23, uintStatusArrayLength);
+
+                string status = body.substr(20, uintStatusArrayLength);
+
+                if (tox_self_set_status_message(tox, uintStatusArray, uintStatusArrayLength, NULL)) {
+                    writeToLog("Changed status message to " + status);
+                    saveTox();
+                } else {
+                    writeToLog("Changing status message to " + status + " failed");
+                }
+
+                return;
+            } else if (body.find(" set_status ") == 0 && body.length() > 12) {
+                string text = body.substr(12);
+                if (text == "busy") {
+                    tox_self_set_status(tox, TOX_USER_STATUS_BUSY);
+                    writeToLog("Changed status to busy");
+                } else if (text == "away") {
+                    tox_self_set_status(tox, TOX_USER_STATUS_AWAY);
+                    writeToLog("Changed status to away");
+                } else if (text == "online") {
+                    tox_self_set_status(tox, TOX_USER_STATUS_NONE);
+                    writeToLog("Changed status to online");
+                } else {
+                    writeToLog("Given status is invalid");
+                }
                 saveTox();
-            } else {
-                writeToLog("Changing name to " + name + " failed");
-            }
+                return;
+            } else if (body.find(" message ") == 0 && body.length() > 9) {
+                string text = body.substr(9);
+                int noNumberPos = text.find_first_not_of("0123456789");
+                int spacePos = text.find(" ");
+                if (spacePos > 0 && noNumberPos == spacePos) {
+                    uint32_t friendId = atoi(text.substr(0, noNumberPos).c_str()); //TODO: stoul (also supports finding out noNumberPos!)
+                    if (tox_friend_exists(tox, friendId)) {
+                        int sendMessageLength = text.length() - noNumberPos - 1;
+                        if (sendMessageLength > 0) {
+                            uint16_t uintSendMessageArrayLength = min(sendMessageLength, TOX_MAX_MESSAGE_LENGTH);
+                            uint8_t uintSendMessageArray[uintSendMessageArrayLength];
+                            memcpy(uintSendMessageArray, message + noNumberPos + 13, uintSendMessageArrayLength);
 
-            return;
-        } else if (body.find(" set_status_message ") == 0 && body.length() > 20) {
-            uint16_t uintStatusArrayLength = min((int) (body.length() - 20), TOX_MAX_STATUS_MESSAGE_LENGTH);
-            uint8_t uintStatusArray[uintStatusArrayLength];
-            memcpy(uintStatusArray, message + 23, uintStatusArrayLength);
+                            string sendMessage = body.substr(noNumberPos + 10, uintSendMessageArrayLength);
 
-            string status = body.substr(20, uintStatusArrayLength);
+                            TOX_ERR_FRIEND_SEND_MESSAGE sendError;
+                            sendMessageWithQueue(tox, friendId, TOX_MESSAGE_TYPE_NORMAL, uintSendMessageArray, uintSendMessageArrayLength, &sendError);
 
-            if (tox_self_set_status_message(tox, uintStatusArray, uintStatusArrayLength, NULL)) {
-                writeToLog("Changed status message to " + status);
-                saveTox();
-            } else {
-                writeToLog("Changing status message to " + status + " failed");
-            }
+                            if (sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
+                                writeToLog("Sent message \"" + sendMessage + "\"");
+                            } else {
+                                writeToLog("Sending message \"" + sendMessage + "\" failed");
+                            }
 
-            return;
-        } else if (body.find(" set_status ") == 0 && body.length() > 12) {
-            string text = body.substr(12);
-            if (text == "busy") {
-                tox_self_set_status(tox, TOX_USER_STATUS_BUSY);
-                writeToLog("Changed status to busy");
-            } else if (text == "away") {
-                tox_self_set_status(tox, TOX_USER_STATUS_AWAY);
-                writeToLog("Changed status to away");
-            } else if (text == "online") {
-                tox_self_set_status(tox, TOX_USER_STATUS_NONE);
-                writeToLog("Changed status to online");
-            } else {
-                writeToLog("Given status is invalid");
-            }
-            saveTox();
-            return;
-        } else if (body.find(" message ") == 0 && body.length() > 9) {
-            string text = body.substr(9);
-            int noNumberPos = text.find_first_not_of("0123456789");
-            int spacePos = text.find(" ");
-            if (spacePos > 0 && noNumberPos == spacePos) {
-                uint32_t friendId = atoi(text.substr(0, noNumberPos).c_str()); //TODO: stoul (also supports finding out noNumberPos!)
-                if (tox_friend_exists(tox, friendId)) {
-                    int sendMessageLength = text.length() - noNumberPos - 1;
-                    if (sendMessageLength > 0) {
-                        uint16_t uintSendMessageArrayLength = min(sendMessageLength, TOX_MAX_MESSAGE_LENGTH);
-                        uint8_t uintSendMessageArray[uintSendMessageArrayLength];
-                        memcpy(uintSendMessageArray, message + noNumberPos + 13, uintSendMessageArrayLength);
-
-                        string sendMessage = body.substr(noNumberPos + 10, uintSendMessageArrayLength);
-
-                        TOX_ERR_FRIEND_SEND_MESSAGE sendError;
-                        sendMessageWithQueue(tox, friendId, TOX_MESSAGE_TYPE_NORMAL, uintSendMessageArray, uintSendMessageArrayLength, &sendError);
-
-                        if (sendError == TOX_ERR_FRIEND_SEND_MESSAGE_OK) {
-                            writeToLog("Sent message \"" + sendMessage + "\"");
+                            return;
                         } else {
-                            writeToLog("Sending message \"" + sendMessage + "\" failed");
+                            writeToLog("No message entered");
                         }
+                    } else {
+                        writeToLog("Given friend ID does not exist");
+                    }
+                } else {
+                    writeToLog("No friend ID entered");
+                }
+            } else if (body == " friendlist") {
+                sendFriendList();
+                return;
+            } else if (body == " pending_fr") {
+                sendPendingFriendRequestList();
+                return;
+            } else if (body.find(" accept_fr ") == 0 && body.length() > 11) {
+                if (body.length() == 11 + TOX_PUBLIC_KEY_SIZE * 2) {
+                    string publicKeyString = body.substr(11);
+                    std::transform(publicKeyString.begin(), publicKeyString.end(), publicKeyString.begin(), ::tolower); //For comparison with pending friend requests
+
+                    //Check if pending friend request exists for given public key
+
+                    int i;
+                    for (i = 0; i < friendRequestPublicKeyList.size(); i++) {
+                        if (friendRequestPublicKeyList.at(i) == publicKeyString) {
+                            break;
+                        }
+                    }
+
+                    if (i != friendRequestPublicKeyList.size()) {
+                        uint8_t uintPublicKeyArray[TOX_PUBLIC_KEY_SIZE];
+                        hexToByte(string((char *) message + 14, TOX_PUBLIC_KEY_SIZE * 2), uintPublicKeyArray, TOX_PUBLIC_KEY_SIZE);
+
+                        uint32_t friendNumber = tox_friend_add_norequest(tox, uintPublicKeyArray, NULL);
+
+                        if (friendNumber == UINT32_MAX) {
+                            writeToLog("Failed to add friend");
+                            return;
+                        }
+
+                        writeToLog(string("Added friend ") + publicKeyString + " (friend number: " + to_string(friendNumber) + ")");
+
+                        saveTox();
+
+                        //Remove friend request from list
+
+                        friendRequestPublicKeyList.erase(friendRequestPublicKeyList.begin() + i);
 
                         return;
                     } else {
-                        writeToLog("No message entered");
+                        writeToLog("No pending friend request could be found for the given public key");
                     }
                 } else {
-                    writeToLog("Given friend ID does not exist");
+                    writeToLog("Wrong length for public key");
                 }
-            } else {
-                writeToLog("No friend ID entered");
-            }
-        } else if (body == " friendlist") {
-            sendFriendList();
-            return;
-        } else if (body == " pending_fr") {
-            sendPendingFriendRequestList();
-            return;
-        } else if (body.find(" accept_fr ") == 0 && body.length() > 11) {
-            if (body.length() == 11 + TOX_PUBLIC_KEY_SIZE * 2) {
-                string publicKeyString = body.substr(11);
-                std::transform(publicKeyString.begin(), publicKeyString.end(), publicKeyString.begin(), ::tolower); //For comparison with pending friend requests
+            } else if (body.find(" decline_fr ") == 0 && body.length() > 12) {
+                if (body.length() == 12 + TOX_PUBLIC_KEY_SIZE * 2) {
+                    string publicKeyString = body.substr(12);
+                    std::transform(publicKeyString.begin(), publicKeyString.end(), publicKeyString.begin(), ::tolower); //For comparison with pending friend requests
 
-                //Check if pending friend request exists for given public key
+                    //Check if pending friend request exists for given public key
 
-                int i;
-                for (i = 0; i < friendRequestPublicKeyList.size(); i++) {
-                    if (friendRequestPublicKeyList.at(i) == publicKeyString) {
-                        break;
+                    int i;
+                    for (i = 0; i < friendRequestPublicKeyList.size(); i++) {
+                        if (friendRequestPublicKeyList.at(i) == publicKeyString) {
+                            break;
+                        }
                     }
+
+                    if (i != friendRequestPublicKeyList.size()) {
+                        //Remove friend request from list
+
+                        friendRequestPublicKeyList.erase(friendRequestPublicKeyList.begin() + i);
+
+                        writeToLog("Removed friend request from public key " + publicKeyString);
+
+                        return;
+                    } else {
+                        writeToLog("No pending friend request could be found for the given public key");
+                    }
+                } else {
+                    writeToLog("Wrong length for public key");
                 }
+            } else if (body.find(" add ") == 0 && body.length() > 5) {
+                if (body.length() == 5 + TOX_ADDRESS_SIZE * 2) {
+                    string addressString = body.substr(5);
+                    std::transform(addressString.begin(), addressString.end(), addressString.begin(), ::tolower); //For comparison with pending friend requests
 
-                if (i != friendRequestPublicKeyList.size()) {
-                    uint8_t uintPublicKeyArray[TOX_PUBLIC_KEY_SIZE];
-                    hexToByte(string((char *) message + 14, TOX_PUBLIC_KEY_SIZE * 2), uintPublicKeyArray, TOX_PUBLIC_KEY_SIZE);
+                    uint8_t uintAddressArray[TOX_ADDRESS_SIZE];
+                    hexToByte(string((char *) message + 8, TOX_ADDRESS_SIZE * 2), uintAddressArray, TOX_ADDRESS_SIZE);
 
-                    uint32_t friendNumber = tox_friend_add_norequest(tox, uintPublicKeyArray, NULL);
+                    //Check if pending friend request exists for the given address
+                    //If one exists, use tox_friend_add_norequest()
+
+                    int i;
+                    for (i = 0; i < friendRequestPublicKeyList.size(); i++) {
+                        if (addressString.find(friendRequestPublicKeyList.at(i)) == 0) { //Given address has public key from friend request
+                            break;
+                        }
+                    }
+
+                    uint32_t friendNumber;
+
+                    if (i != friendRequestPublicKeyList.size()) {
+                        friendNumber = tox_friend_add_norequest(tox, uintAddressArray, NULL); //Does not use any further bytes from address than TOX_PUBLIC_KEY_SIZE
+                    } else {
+                        friendNumber = tox_friend_add(tox, uintAddressArray, (uint8_t *) "Please add me on Tox", 20, NULL);
+                    }
 
                     if (friendNumber == UINT32_MAX) {
                         writeToLog("Failed to add friend");
                         return;
+                    } else if (i != friendRequestPublicKeyList.size()) {
+                        //If a pending friend request exists, remove it from the list now
+                        friendRequestPublicKeyList.erase(friendRequestPublicKeyList.begin() + i);
                     }
 
-                    writeToLog(string("Added friend ") + publicKeyString + " (friend number: " + to_string(friendNumber) + ")");
+                    writeToLog(string("Added friend ") + addressString + " (friend number: " + to_string(friendNumber) + ")");
 
                     saveTox();
 
-                    //Remove friend request from list
-
-                    friendRequestPublicKeyList.erase(friendRequestPublicKeyList.begin() + i);
-
                     return;
                 } else {
-                    writeToLog("No pending friend request could be found for the given public key");
+                    writeToLog("Wrong length for friend address");
                 }
-            } else {
-                writeToLog("Wrong length for public key");
-            }
-        } else if (body.find(" decline_fr ") == 0 && body.length() > 12) {
-            if (body.length() == 12 + TOX_PUBLIC_KEY_SIZE * 2) {
-                string publicKeyString = body.substr(12);
-                std::transform(publicKeyString.begin(), publicKeyString.end(), publicKeyString.begin(), ::tolower); //For comparison with pending friend requests
-
-                //Check if pending friend request exists for given public key
-
-                int i;
-                for (i = 0; i < friendRequestPublicKeyList.size(); i++) {
-                    if (friendRequestPublicKeyList.at(i) == publicKeyString) {
-                        break;
-                    }
-                }
-
-                if (i != friendRequestPublicKeyList.size()) {
-                    //Remove friend request from list
-
-                    friendRequestPublicKeyList.erase(friendRequestPublicKeyList.begin() + i);
-
-                    writeToLog("Removed friend request from public key " + publicKeyString);
-
-                    return;
-                } else {
-                    writeToLog("No pending friend request could be found for the given public key");
-                }
-            } else {
-                writeToLog("Wrong length for public key");
-            }
-        } else if (body.find(" add ") == 0 && body.length() > 5) {
-            if (body.length() == 5 + TOX_ADDRESS_SIZE * 2) {
-                string addressString = body.substr(5);
-                std::transform(addressString.begin(), addressString.end(), addressString.begin(), ::tolower); //For comparison with pending friend requests
-
-                uint8_t uintAddressArray[TOX_ADDRESS_SIZE];
-                hexToByte(string((char *) message + 8, TOX_ADDRESS_SIZE * 2), uintAddressArray, TOX_ADDRESS_SIZE);
-
-                //Check if pending friend request exists for the given address
-                //If one exists, use tox_friend_add_norequest()
-
-                int i;
-                for (i = 0; i < friendRequestPublicKeyList.size(); i++) {
-                    if (addressString.find(friendRequestPublicKeyList.at(i)) == 0) { //Given address has public key from friend request
-                        break;
-                    }
-                }
-
+            } else if (body.find(" delete_friend ") == 0 && body.length() > 15) {
+                string friendNumberString = body.substr(15);
                 uint32_t friendNumber;
 
-                if (i != friendRequestPublicKeyList.size()) {
-                    friendNumber = tox_friend_add_norequest(tox, uintAddressArray, NULL); //Does not use any further bytes from address than TOX_PUBLIC_KEY_SIZE
-                } else {
-                    friendNumber = tox_friend_add(tox, uintAddressArray, (uint8_t *) "Please add me on Tox", 20, NULL);
-                }
-
-                if (friendNumber == UINT32_MAX) {
-                    writeToLog("Failed to add friend");
+                try {
+                    friendNumber = stoul(friendNumberString);
+                } catch (...) {
+                    writeToLog("Failed to parse friend number");
                     return;
-                } else if (i != friendRequestPublicKeyList.size()) {
-                    //If a pending friend request exists, remove it from the list now
-                    friendRequestPublicKeyList.erase(friendRequestPublicKeyList.begin() + i);
                 }
 
-                writeToLog(string("Added friend ") + addressString + " (friend number: " + to_string(friendNumber) + ")");
+                if (friendNumber == redirectionFriendNumber) {
+                    writeToLog("Cannot remove redirection target from friend list!");
+                    return;
+                }
 
-                saveTox();
+                TOX_ERR_FRIEND_DELETE error;
+
+                if (tox_friend_delete(tox, friendNumber, &error)) {
+                    //Delete pending messages for given friend number as it can be reused later
+
+                    if (messageQueueMap.count(friendNumber) > 0) {
+                        messageQueueMap.erase(friendNumber);
+                    }
+
+                    writeToLog("Removed friend #" + to_string(friendNumber));
+                } else if (error = TOX_ERR_FRIEND_DELETE_FRIEND_NOT_FOUND) {
+                    writeToLog("Could not find friend for given friend number: " + to_string(friendNumber));
+                } else {
+                    writeToLog("Failed to delete friend #" + to_string(friendNumber));
+                }
 
                 return;
             } else {
-                writeToLog("Wrong length for friend address");
+                writeToLog("Could not interpret command");
             }
-        } else if (body.find(" delete_friend ") == 0 && body.length() > 15) {
-            string friendNumberString = body.substr(15);
-            uint32_t friendNumber;
-
-            try {
-                friendNumber = stoul(friendNumberString);
-            } catch (...) {
-                writeToLog("Failed to parse friend number");
-                return;
-            }
-
-            if (friendNumber == redirectionFriendNumber) {
-                writeToLog("Cannot remove redirection target from friend list!");
-                return;
-            }
-
-            TOX_ERR_FRIEND_DELETE error;
-
-            if (tox_friend_delete(tox, friendNumber, &error)) {
-                //Delete pending messages for given friend number as it can be reused later
-
-                if (messageQueueMap.count(friendNumber) > 0) {
-                    messageQueueMap.erase(friendNumber);
-                }
-
-                writeToLog("Removed friend #" + to_string(friendNumber));
-            } else if (error = TOX_ERR_FRIEND_DELETE_FRIEND_NOT_FOUND) {
-                writeToLog("Could not find friend for given friend number: " + to_string(friendNumber));
-            } else {
-                writeToLog("Failed to delete friend #" + to_string(friendNumber));
-            }
-
-            return;
-        } else {
-            writeToLog("Could not interpret command");
         }
+
+        return;
     }
 
     string friendNumberString = to_string(friendNumber);
